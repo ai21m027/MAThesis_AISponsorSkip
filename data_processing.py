@@ -1,5 +1,7 @@
 import pandas as pd
+import pickle
 from subtitle_download import SubtitleToStorage
+from rich.progress import track
 pd.set_option('display.max_columns', None)
 
 
@@ -12,13 +14,14 @@ if __name__=='__main__':
     print(data.loc[0:1000])
     """
     data = pd.read_feather('data/sponsorTimes_best1000.feather')
-    print(data.loc[0])
+    #print(data.loc[0])
     storage_config={'type':'return_value'}
 
     clean_data=pd.DataFrame(columns=['videoID','startTime','endTime','votes','incorrectVotes','subtitleID'])
     subtitle_ID = 0
     subtitle_dict = {}
-    for i in range(20):
+    data_length = len(data)
+    for i in track(range(data_length),description='Downloading subtitles'):
         start_time = data.loc[i,'startTime']
         end_time = data.loc[i,'endTime']
         downloader = SubtitleToStorage.SubtitlesToStorage(source='youtube',video_id=data.loc[i,'videoID'],storage_config=storage_config)
@@ -42,16 +45,21 @@ if __name__=='__main__':
             else:
                 categorized_subtitles.append({'text': element['text'], 'category': 'not-sponsored'})
         #print(categorized_subtitles)
-        print()
+        #print()
         df_catsub = pd.DataFrame(categorized_subtitles)
         subtitle_dict[subtitle_ID]=df_catsub
         short_data = data.loc[i,['videoID','startTime','endTime','votes','incorrectVotes']]
         short_data =short_data.to_frame().transpose()
         short_data['subtitleID'] = [subtitle_ID]
         clean_data = pd.concat([clean_data,short_data])
-        #print(clean_data)
-        #print(subtitle_dict)
+        clean_data = clean_data.reset_index(drop=True)
+        clean_data.to_feather('data/current_progress.feather')
+        with open('data/saved_subtitle_dictionary.pkl', 'wb') as f:
+            pickle.dump(subtitle_dict, f)
         subtitle_ID+=1
-    print(clean_data)
-    print(subtitle_dict)
-    #print(transcript)
+    clean_data = clean_data.reset_index(drop=True)
+    clean_data.to_feather('data/current_progress.feather')
+    with open('data/saved_subtitle_dictionary.pkl', 'wb') as f:
+        pickle.dump(subtitle_dict, f)
+    print(clean_data.loc[3])
+    print(subtitle_dict[clean_data.loc[3,'subtitleID']])

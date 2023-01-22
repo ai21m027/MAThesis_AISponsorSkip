@@ -26,8 +26,8 @@ class SubtitlesToStorage:
             return subtitles
 
     def __subtitles_from_youtube(self):
-        transcript_list = YouTubeTranscriptApi.list_transcripts(self.video_id)
         try:
+            transcript_list = YouTubeTranscriptApi.list_transcripts(self.video_id)
             english_transcript = transcript_list.find_manually_created_transcript(['en','en-US'])
         except:
             return None,None
