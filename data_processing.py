@@ -33,7 +33,7 @@ if __name__=='__main__':
         for element in transcript:
             if float(element['start']) >= start_time and float(element['start']) < end_time and not in_subtitle:
                 in_subtitle=True
-                categorized_subtitles.append({'text':element['text'],'category':'sponsored'})
+                categorized_subtitles.append({'text':element['text'],'category':'sponsored','start':element['start'],'duration':element['duration']})
                 # if sponsor segment is only on transcript segment long set false immediatly
                 if (float(element['start']) + float(element['duration'])) >= end_time and in_subtitle:
                     in_subtitle = False
@@ -41,9 +41,9 @@ if __name__=='__main__':
                 in_subtitle = False
                 #sponsor_text += element['text']
             elif in_subtitle:
-                categorized_subtitles.append({'text':element['text'],'category':'sponsored'})
+                categorized_subtitles.append({'text':element['text'],'category':'sponsored','start':element['start'],'duration':element['duration']})
             else:
-                categorized_subtitles.append({'text': element['text'], 'category': 'not-sponsored'})
+                categorized_subtitles.append({'text': element['text'], 'category': 'not-sponsored','start':element['start'],'duration':element['duration']})
         #print(categorized_subtitles)
         #print()
         df_catsub = pd.DataFrame(categorized_subtitles)
