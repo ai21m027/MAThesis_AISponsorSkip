@@ -3,10 +3,10 @@ import pickle
 
 
 
-with open('data/saved_subtitle_dictionary.pkl', 'rb') as f:
+with open('test_data/saved_subtitle_dictionary.pkl', 'rb') as f:
     subtitles_dict = pickle.load(f)
 
-data = pd.read_feather('data/current_progress.feather')
+data = pd.read_feather('test_data/current_progress.feather')
 print(subtitles_dict)
 print(data)
 
