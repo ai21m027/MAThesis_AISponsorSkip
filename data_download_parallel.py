@@ -2,12 +2,17 @@ import pandas as pd
 import pickle
 from subtitle_download import SubtitleToStorage
 from rich.progress import track
+
 pd.set_option('display.max_columns', None)
 from multiprocessing.pool import Pool
 from youtube_transcript_api import YouTubeTranscriptApi
 import time
+import sqlite_test as SQL
 
-def youtube_download(video_id:str):
+my_db_path = 'data/SQLite_YTSP_subtitles.db'
+
+
+def youtube_download(video_id: str):
     try:
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         english_transcript = transcript_list.find_manually_created_transcript(['en', 'en-US'])
@@ -17,36 +22,42 @@ def youtube_download(video_id:str):
 
     return transcript
 
-if __name__=='__main__':
 
+if __name__ == '__main__':
+    my_sponsor_db = SQL.SponsorDB(my_db_path)
+
+    data = pd.read_csv('data/sponsorTimes.csv', error_bad_lines=False)
+
+    # data = pd.read_feather('test_data/sponsorTimes_best1000.feather')
+
+    for idx, element in track(data.iterrows(), description='Writing data to sql'):
+        if not idx % 1000:
+            print(idx)
+
+        if element.loc['category'] == 'sponsor':
+            new_sponsor = SQL.SponsorInfo(
+                video_id=element.loc['videoID'],
+                start_time=element.loc['startTime'],
+                end_time=element.loc['endTime'],
+                upvotes=element.loc['votes'],
+                downvotes=element.loc['incorrectVotes'],
+            )
+            my_sponsor_db.store_sponsor_info(new_sponsor)
     """
-    data = pd.read_feather('data/sponsorTimes.feather')
-    data = data.sort_values('views',ascending=False)
-    data = data.reset_index(drop=True)
-    print(data.loc[0,'videoID'])
-    print(data.loc[0:1000])
-    """
-    data = pd.read_feather('test_data/sponsorTimes_best1000.feather')
-    #print(data.loc[0])
-    storage_config={'type':'return_value'}
-    #data = data.loc[:50]
-
-
-
-
-    clean_data=pd.DataFrame(columns=['videoID','startTime','endTime','votes','incorrectVotes','subtitleID'])
     subtitle_ID = 0
     subtitle_dict = {}
     data_length = len(data)
     start = time.time()
     with Pool() as pool:
-        ids = list(data.loc[:,'videoID'])
-        #print(list(ids))
-        results = pool.map(youtube_download,ids)
+        ids = list(data.loc[:, 'videoID'])
+        # print(list(ids))
+        results = pool.map(youtube_download, ids)
 
-    #print(results)
+    # print(results)
     end = time.time()
-    print(f"Parallel time: {end-start}")
+    print(f"Parallel time: {end - start}")
+    """
+
     """
     start = time.time()
     result = []
