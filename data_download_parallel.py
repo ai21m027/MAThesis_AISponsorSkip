@@ -2,14 +2,19 @@ import pandas as pd
 import pickle
 from subtitle_download import SubtitleToStorage
 from rich.progress import track
+import logging
 
 pd.set_option('display.max_columns', None)
 from multiprocessing.pool import Pool
 from youtube_transcript_api import YouTubeTranscriptApi
 import time
 import database as SQL
+import tqdm
 
 MY_DB_PATH = 'data/SQLite_YTSP_subtitles.db'
+
+logging.basicConfig(filename='log/subtitles_download.log', encoding='utf-8', level=logging.INFO,
+                    format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 
 def youtube_download(video_id: str):
@@ -17,13 +22,13 @@ def youtube_download(video_id: str):
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         english_transcript = transcript_list.find_manually_created_transcript(['en', 'en-US'])
     except:
-        return None, None
+        return None
     transcript = english_transcript.fetch()
 
     return transcript
 
 
-def write_to_sponsor_info(input_data: pd.DataFrame)->None:
+def write_to_sponsor_info(input_data: pd.DataFrame) -> None:
     i_sponsor_db = SQL.SponsorDB(MY_DB_PATH)
     for idx, element in track(input_data.iterrows(), description='Writing data to sql'):
         if not idx % 1000:
@@ -40,90 +45,41 @@ def write_to_sponsor_info(input_data: pd.DataFrame)->None:
             i_sponsor_db.store_sponsor_info(new_sponsor)
 
 
-def download_and_write_subtitles(video_id:str)->None:
+def download_and_write_subtitles(video_id: str) -> None:
     i_sponsor_db = SQL.SponsorDB(MY_DB_PATH)
     # check if subtitles are already in DB
-    if len(i_sponsor_db.read_subtitles_by_videoid(video_id))!=0:
+    if len(i_sponsor_db.read_subtitles_by_videoid(video_id)) != 0:  # if subtitles already in DB skip
+        logging.info(f'Video: {video_id} already in database.')
         return
-    print('Hallo')
+    transcript = youtube_download(video_id)
+    if transcript is None:  # if subtitles cannot be downloaded/don't exist skip
+        return
+    for line_dict in transcript:
+        new_subtitle_segment = SQL.SubtitleSegment(video_id=video_id, text=line_dict['text'],
+                                                   is_sponsor=False, start_time=line_dict['start'],
+                                                   duration=line_dict['duration'])
+        i_sponsor_db.store_subtitle(new_subtitle_segment)
+    return
+
 
 if __name__ == '__main__':
     my_sponsor_db = SQL.SponsorDB(MY_DB_PATH)
 
-    #data = pd.read_csv('data/sponsorTimes.csv', error_bad_lines=False)
+    # data = pd.read_csv('data/sponsorTimes.csv', error_bad_lines=False)
 
     # data = pd.read_feather('test_data/sponsorTimes_best1000.feather')
     data = pd.DataFrame()
-    print(youtube_download('fBxtS9BpVWs'))
 
-    download_and_write_subtitles('test')
-
-    """
-    subtitle_ID = 0
-    subtitle_dict = {}
-    data_length = len(data)
+    test = pd.DataFrame(my_sponsor_db.read_all_sponsor_info(),
+                        columns=['uid', 'video_id', 'start_time', 'end_time', 'upvotes', 'downvotes'])
+    test = test.sort_values('upvotes', ascending=False)
+    test = test.reset_index(drop=True)
+    unique_video_ids = test['video_id'].unique()
+    multipro_list = [(i, unique_video_ids[i]) for i in range(10_000)]
     start = time.time()
     with Pool() as pool:
-        ids = list(data.loc[:, 'videoID'])
-        # print(list(ids))
-        results = pool.map(youtube_download, ids)
-
-    # print(results)
+        for _ in tqdm.tqdm(pool.imap_unordered(download_and_write_subtitles, unique_video_ids), total=10_000):
+            pass
     end = time.time()
-    print(f"Parallel time: {end - start}")
-    """
+    print(f"Download time: {end - start}")
 
-    """
-    start = time.time()
-    result = []
-    for i in range(len(data)):
-        result.append(youtube_download(data.loc[i,'videoID']))
-    end = time.time()
-    print(f"Serial time: {end-start}")
-    """
-
-    """
-    for i in track(range(data_length),description='Downloading subtitles'):
-        start_time = data.loc[i,'startTime']
-        end_time = data.loc[i,'endTime']
-        downloader = SubtitleToStorage.SubtitlesToStorage(source='youtube',video_id=data.loc[i,'videoID'],storage_config=storage_config)
-        subtitles,transcript = downloader.save()
-        if subtitles is None:
-            continue
-        in_subtitle=False
-        categorized_subtitles = []
-        for element in transcript:
-            if float(element['start']) >= start_time and float(element['start']) < end_time and not in_subtitle:
-                in_subtitle=True
-                categorized_subtitles.append({'text':element['text'],'category':'sponsored','start':element['start'],'duration':element['duration']})
-                # if sponsor segment is only on transcript segment long set false immediatly
-                if (float(element['start']) + float(element['duration'])) >= end_time and in_subtitle:
-                    in_subtitle = False
-            elif (float(element['start'])+float(element['duration'])) >= end_time and in_subtitle:
-                in_subtitle = False
-                #sponsor_text += element['text']
-            elif in_subtitle:
-                categorized_subtitles.append({'text':element['text'],'category':'sponsored','start':element['start'],'duration':element['duration']})
-            else:
-                categorized_subtitles.append({'text': element['text'], 'category': 'not-sponsored','start':element['start'],'duration':element['duration']})
-        #print(categorized_subtitles)
-        #print()
-        df_catsub = pd.DataFrame(categorized_subtitles)
-        subtitle_dict[subtitle_ID]=df_catsub
-        short_data = data.loc[i,['videoID','startTime','endTime','votes','incorrectVotes']]
-        short_data =short_data.to_frame().transpose()
-        short_data['subtitleID'] = [subtitle_ID]
-        clean_data = pd.concat([clean_data,short_data])
-        clean_data = clean_data.reset_index(drop=True)
-        clean_data.to_feather('data/current_progress.feather')
-        with open('data/saved_subtitle_dictionary.pkl', 'wb') as f:
-            pickle.dump(subtitle_dict, f)
-        subtitle_ID+=1
-    clean_data = clean_data.reset_index(drop=True)
-    clean_data.to_feather('data/current_progress.feather')
-    with open('data/saved_subtitle_dictionary.pkl', 'wb') as f:
-        pickle.dump(subtitle_dict, f)
-    print(clean_data.loc[3])
-    print(subtitle_dict[clean_data.loc[3,'subtitleID']])
-
-    """
