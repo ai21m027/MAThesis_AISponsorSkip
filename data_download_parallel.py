@@ -7,9 +7,9 @@ pd.set_option('display.max_columns', None)
 from multiprocessing.pool import Pool
 from youtube_transcript_api import YouTubeTranscriptApi
 import time
-import sqlite_test as SQL
+import database as SQL
 
-my_db_path = 'data/SQLite_YTSP_subtitles.db'
+MY_DB_PATH = 'data/SQLite_YTSP_subtitles.db'
 
 
 def youtube_download(video_id: str):
@@ -23,14 +23,9 @@ def youtube_download(video_id: str):
     return transcript
 
 
-if __name__ == '__main__':
-    my_sponsor_db = SQL.SponsorDB(my_db_path)
-
-    data = pd.read_csv('data/sponsorTimes.csv', error_bad_lines=False)
-
-    # data = pd.read_feather('test_data/sponsorTimes_best1000.feather')
-
-    for idx, element in track(data.iterrows(), description='Writing data to sql'):
+def write_to_sponsor_info(input_data: pd.DataFrame)->None:
+    i_sponsor_db = SQL.SponsorDB(MY_DB_PATH)
+    for idx, element in track(input_data.iterrows(), description='Writing data to sql'):
         if not idx % 1000:
             print(idx)
 
@@ -42,7 +37,27 @@ if __name__ == '__main__':
                 upvotes=element.loc['votes'],
                 downvotes=element.loc['incorrectVotes'],
             )
-            my_sponsor_db.store_sponsor_info(new_sponsor)
+            i_sponsor_db.store_sponsor_info(new_sponsor)
+
+
+def download_and_write_subtitles(video_id:str)->None:
+    i_sponsor_db = SQL.SponsorDB(MY_DB_PATH)
+    # check if subtitles are already in DB
+    if len(i_sponsor_db.read_subtitles_by_videoid(video_id))!=0:
+        return
+    print('Hallo')
+
+if __name__ == '__main__':
+    my_sponsor_db = SQL.SponsorDB(MY_DB_PATH)
+
+    #data = pd.read_csv('data/sponsorTimes.csv', error_bad_lines=False)
+
+    # data = pd.read_feather('test_data/sponsorTimes_best1000.feather')
+    data = pd.DataFrame()
+    print(youtube_download('fBxtS9BpVWs'))
+
+    download_and_write_subtitles('test')
+
     """
     subtitle_ID = 0
     subtitle_dict = {}
