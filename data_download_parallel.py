@@ -17,14 +17,16 @@ logging.basicConfig(filename='log/subtitles_download.log', encoding='utf-8', lev
                     format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 
-def youtube_download(video_id: str):
+def youtube_download(video_id: str,generated:bool=False):
     try:
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        english_transcript = transcript_list.find_manually_created_transcript(['en', 'en-US'])
+        if generated:
+            english_transcript = transcript_list.find_generated_transcript(['en', 'en-US'])
+        else:
+            english_transcript = transcript_list.find_manually_created_transcript(['en', 'en-US'])
+        transcript = english_transcript.fetch()
     except:
         return None
-    transcript = english_transcript.fetch()
-
     return transcript
 
 
@@ -48,37 +50,51 @@ def write_to_sponsor_info(input_data: pd.DataFrame) -> None:
 def download_and_write_subtitles(video_id: str) -> None:
     i_sponsor_db = SQL.SponsorDB(MY_DB_PATH)
     # check if subtitles are already in DB
-    if len(i_sponsor_db.read_subtitles_by_videoid(video_id)) != 0:  # if subtitles already in DB skip
+    if i_sponsor_db.check_video_exists_in_subtitles(video_id):  # if subtitles already in DB skip
         logging.info(f'Video: {video_id} already in database.')
         return
     transcript = youtube_download(video_id)
     if transcript is None:  # if subtitles cannot be downloaded/don't exist skip
+        logging.info(f'No subtitles for {video_id}')
         return
     for line_dict in transcript:
         new_subtitle_segment = SQL.SubtitleSegment(video_id=video_id, text=line_dict['text'],
                                                    is_sponsor=False, start_time=line_dict['start'],
                                                    duration=line_dict['duration'])
         i_sponsor_db.store_subtitle(new_subtitle_segment)
+    logging.info(f'Video: {video_id} added to database')
+    return
+
+def download_and_write_generated_subtitles(video_id: str) -> None:
+    i_sponsor_db = SQL.SponsorDB(MY_DB_PATH)
+    # check if subtitles are already in DB
+    if i_sponsor_db.check_video_exists_in_generated_subtitles(video_id):  # if subtitles already in DB skip
+        logging.info(f'Video: {video_id} already in database.')
+        return
+    transcript = youtube_download(video_id,generated=True)
+    if transcript is None:  # if subtitles cannot be downloaded/don't exist skip
+        logging.info(f'No subtitles for {video_id}')
+        return
+    for line_dict in transcript:
+        new_subtitle_segment = SQL.SubtitleSegment(video_id=video_id, text=line_dict['text'],
+                                                   is_sponsor=False, start_time=line_dict['start'],
+                                                   duration=line_dict['duration'])
+        i_sponsor_db.store_generated_subtitle(new_subtitle_segment)
+    logging.info(f'Video: {video_id} added to database')
     return
 
 
 if __name__ == '__main__':
     my_sponsor_db = SQL.SponsorDB(MY_DB_PATH)
 
-    # data = pd.read_csv('data/sponsorTimes.csv', error_bad_lines=False)
-
-    # data = pd.read_feather('test_data/sponsorTimes_best1000.feather')
-    data = pd.DataFrame()
-
-    test = pd.DataFrame(my_sponsor_db.read_all_sponsor_info(),
+    data = pd.DataFrame(my_sponsor_db.get_all_sponsor_info(),
                         columns=['uid', 'video_id', 'start_time', 'end_time', 'upvotes', 'downvotes'])
-    test = test.sort_values('upvotes', ascending=False)
-    test = test.reset_index(drop=True)
-    unique_video_ids = test['video_id'].unique()
-    multipro_list = [(i, unique_video_ids[i]) for i in range(10_000)]
+    data = data.sort_values('upvotes', ascending=False)
+    data = data.reset_index(drop=True)
+    unique_video_ids = data['video_id'].unique()
     start = time.time()
     with Pool() as pool:
-        for _ in tqdm.tqdm(pool.imap_unordered(download_and_write_subtitles, unique_video_ids), total=10_000):
+        for _ in tqdm.tqdm(pool.imap_unordered(download_and_write_generated_subtitles, unique_video_ids), total=len(unique_video_ids)):
             pass
     end = time.time()
     print(f"Download time: {end - start}")

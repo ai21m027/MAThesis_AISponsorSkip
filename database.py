@@ -36,7 +36,7 @@ class SponsorDB():
         if self._nr_instances == 0:
             self._db_name = db_name
             self.init_database()
-            logging.info(f'Connection to {SponsorDB._db_name} opened')
+            logging.debug(f'Connection to {SponsorDB._db_name} opened')
         elif db_name != self._db_name:
             logging.error(f'SponsorDB already exists with different Database: {SponsorDB._db_name}')
             raise ConnectionAbortedError(f'SponsorDB already exists with different Database: {SponsorDB._db_name}')
@@ -46,7 +46,7 @@ class SponsorDB():
         if self._nr_instances <= 1:
             self._cursor.close()
             self._sqliteConnection.close()
-            logging.info(f'Connection to {SponsorDB._db_name} closed')
+            logging.debug(f'Connection to {SponsorDB._db_name} closed')
         self._nr_instances -= 1
 
     def init_database(self):
@@ -63,11 +63,11 @@ class SponsorDB():
                             downvotes INTEGER NOT NULL);'''
         self._cursor.execute(q_create_table)
         self._sqliteConnection.commit()
-        logging.info('Table sponsor_info ok')
+        logging.debug('Table sponsor_info ok')
         q_create_index = '''CREATE UNIQUE INDEX IF NOT EXISTS vid_start_idx ON sponsor_info (videoid,startTime)'''
         self._cursor.execute(q_create_index)
         self._sqliteConnection.commit()
-        logging.info('vid_start_idx on sponsor_info ok')
+        logging.debug('vid_start_idx on sponsor_info ok')
         # creating subtitles table
         q_create_table = '''CREATE TABLE IF NOT EXISTS subtitles (
                             videoid TEXT NOT NULL,
@@ -77,11 +77,26 @@ class SponsorDB():
                             duration FLOAT NOT NULL);'''
         self._cursor.execute(q_create_table)
         self._sqliteConnection.commit()
-        logging.info('Table subtitles ok')
+        logging.debug('Table subtitles ok')
         q_create_index = '''CREATE INDEX IF NOT EXISTS vidid_idx ON subtitles (videoid)'''
         self._cursor.execute(q_create_index)
         self._sqliteConnection.commit()
-        logging.info('vidid_idx on subtitles ok')
+        logging.debug('vidid_idx on subtitles ok')
+
+        # creating generated subtitles table
+        q_create_table = '''CREATE TABLE IF NOT EXISTS generated_subtitles (
+                            videoid TEXT NOT NULL,
+                            text TEXT NOT NULL,
+                            issponsor BOOLEAN DEFAULT FALSE,
+                            startTime FLOAT NOT NULL,
+                            duration FLOAT NOT NULL);'''
+        self._cursor.execute(q_create_table)
+        self._sqliteConnection.commit()
+        logging.debug('Table generated_subtitles ok')
+        q_create_index = '''CREATE INDEX IF NOT EXISTS vidid_idx ON generated_subtitles (videoid)'''
+        self._cursor.execute(q_create_index)
+        self._sqliteConnection.commit()
+        logging.debug('vidid_idx on subtitles ok')
 
     def store_sponsor_info(self, s_info: SponsorInfo):
         try:
@@ -98,6 +113,8 @@ class SponsorDB():
             logging.error("Error while connecting to sqlite", error, s_info.video_id, s_info.start_time)
 
     def store_subtitle(self, subtitle: SubtitleSegment,iteration:int=0):
+        if iteration >= 10:
+            return
         try:
 
             q_write_subtitle = '''INSERT INTO subtitles
@@ -113,36 +130,84 @@ class SponsorDB():
 
         except sqlite3.OperationalError as error:
             logging.error(f"Error while connecting to sqlite: {error}. Database locked. Iteration:{iteration}")
-            #print(f"Error while connecting to sqlite: {error}. Database locked. Iteration:{iteration}")
             time.sleep(1)
             self.store_subtitle(subtitle,iteration+1)
 
-    def read_all_sponsor_info(self):
+    def store_generated_subtitle(self, subtitle: SubtitleSegment,iteration:int=0):
+        if iteration >= 10:
+            return
+        try:
+
+            q_write_subtitle = '''INSERT INTO generated_subtitles
+                                    (videoid,text,issponsor,startTime,duration)
+                                    VALUES (?,?,?,?,?)
+                                    '''
+            self._cursor.execute(q_write_subtitle, (
+            subtitle.video_id, subtitle.text, subtitle.is_sponsor, subtitle.start_time, subtitle.duration))
+            self._sqliteConnection.commit()
+        except sqlite3.IntegrityError as error:
+
+            logging.error("Error while connecting to sqlite", error, subtitle.video_id, subtitle.start_time)
+
+        except sqlite3.OperationalError as error:
+            logging.error(f"Error while connecting to sqlite: {error}. Database locked. Iteration:{iteration}")
+            time.sleep(1)
+            self.store_subtitle(subtitle,iteration+1)
+
+    def get_all_sponsor_info(self):
         q_read_sponsor_info = '''SELECT * FROM sponsor_info
                                 '''
         self._cursor.execute(q_read_sponsor_info)
         return self._cursor.fetchall()
 
-    def read_all_subtitle_info(self):
+    def get_all_subtitle_info(self):
         q_read_subtitle_info = '''SELECT * FROM subtitles
                                 '''
         self._cursor.execute(q_read_subtitle_info)
         return self._cursor.fetchall()
 
-    def read_subtitles_by_videoid(self, video_id: str) -> list:
+    def get_all_generated_subtitle_info(self):
+        q_read_subtitle_info = '''SELECT * FROM generated_subtitles
+                                '''
+        self._cursor.execute(q_read_subtitle_info)
+        return self._cursor.fetchall()
+
+    def get_subtitles_by_videoid(self, video_id: str) -> list:
         q_read_subtitles = '''SELECT * FROM subtitles WHERE videoid = ?'''
         self._cursor.execute(q_read_subtitles, (video_id,))
         return self._cursor.fetchall()
 
+    def get_generated_subtitles_by_videoid(self, video_id: str) -> list:
+        q_read_subtitles = '''SELECT * FROM generated_subtitles WHERE videoid = ?'''
+        self._cursor.execute(q_read_subtitles, (video_id,))
+        return self._cursor.fetchall()
 
+    def get_sponsor_info_by_video_id(self, video_id: str) -> list:
+        q_read_sponsor_info = '''SELECT * FROM sponsor_info WHERE videoid =?'''
+        self._cursor.execute(q_read_sponsor_info, (video_id,))
+        return self._cursor.fetchall()
 
+    def get_unique_video_ids_from_subtitles(self) -> list:
+        q_read_subtitles = '''SELECT DISTINCT videoid FROM subtitles'''
+        self._cursor.execute(q_read_subtitles)
+        return self._cursor.fetchall()
+
+    def check_video_exists_in_generated_subtitles(self, video_id: str) -> bool:
+        q_read_generated_subtitles = '''SELECT 1 FROM generated_subtitles WHERE videoid =? LIMIT 1'''
+        self._cursor.execute(q_read_generated_subtitles, (video_id,))
+        return self._cursor.fetchone() is not None
+
+    def check_video_exists_in_subtitles(self, video_id: str) -> bool:
+        q_read_subtitles = '''SELECT 1 FROM subtitles WHERE videoid =? LIMIT 1'''
+        self._cursor.execute(q_read_subtitles, (video_id,))
+        return self._cursor.fetchone() is not None
 
 if __name__ == '__main__':
     my_sponsor_db = SponsorDB('data/SQLite_YTSP_subtitles.db')
     my_spi = SponsorInfo(video_id='test123', start_time=62.4, end_time=4003.7, upvotes=23,
                          downvotes=7)
     # my_sponsor_db.store_sponsor_info(my_spi)
-    test = pd.DataFrame(my_sponsor_db.read_all_sponsor_info(),
+    test = pd.DataFrame(my_sponsor_db.get_all_sponsor_info(),
                         columns=['uid', 'video_id', 'start_time', 'end_time', 'upvotes', 'downvotes'])
     test = test.sort_values('upvotes', ascending=False)
     test = test.reset_index(drop=True)
