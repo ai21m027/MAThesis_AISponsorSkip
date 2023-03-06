@@ -7,3 +7,8 @@ google-auth-httplib2
 youtube_transcript_api
 rich
 tqdm
+torch
+pathlib2
+gensim
+tensorboard_logger
+segeval

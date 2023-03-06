@@ -1,8 +1,9 @@
-import sqlite3
-from typing import NamedTuple
-import pandas as pd
 import logging
+import sqlite3
 import time
+from typing import NamedTuple
+
+import pandas as pd
 
 
 class SponsorInfo(NamedTuple):
@@ -21,8 +22,6 @@ class SubtitleSegment(NamedTuple):
     duration: float
 
 
-
-
 class SponsorDB():
     """
     Singelton Sponsor Database
@@ -32,15 +31,10 @@ class SponsorDB():
     _sqliteConnection = None
     _nr_instances = 0
 
-    def __init__(self, db_name: str):
-        if self._nr_instances == 0:
-            self._db_name = db_name
-            self.init_database()
-            logging.debug(f'Connection to {SponsorDB._db_name} opened')
-        elif db_name != self._db_name:
-            logging.error(f'SponsorDB already exists with different Database: {SponsorDB._db_name}')
-            raise ConnectionAbortedError(f'SponsorDB already exists with different Database: {SponsorDB._db_name}')
-        self._nr_instances += 1
+    def __init__(self, db_name: str,no_setup:bool=False):
+        self._db_name = db_name
+        self.init_database(no_setup)
+        logging.debug(f'Connection to {SponsorDB._db_name} opened')
 
     def __del__(self):
         if self._nr_instances <= 1:
@@ -49,11 +43,13 @@ class SponsorDB():
             logging.debug(f'Connection to {SponsorDB._db_name} closed')
         self._nr_instances -= 1
 
-    def init_database(self):
+    def init_database(self,no_setup:bool=False):
         # if database does not exist sqlite3.connect creates the database
-        self._sqliteConnection = sqlite3.connect(self._db_name,timeout=30)
+        self._sqliteConnection = sqlite3.connect(self._db_name, timeout=30)
         self._cursor = self._sqliteConnection.cursor()
         # creating sponsor_info table
+        if no_setup:
+            return
         q_create_table = '''CREATE TABLE IF NOT EXISTS sponsor_info (
                             uid INTEGER PRIMARY KEY AUTOINCREMENT,
                             videoid TEXT NOT NULL,
@@ -112,7 +108,7 @@ class SponsorDB():
 
             logging.error("Error while connecting to sqlite", error, s_info.video_id, s_info.start_time)
 
-    def store_subtitle(self, subtitle: SubtitleSegment,iteration:int=0):
+    def store_subtitle(self, subtitle: SubtitleSegment, iteration: int = 0):
         if iteration >= 10:
             return
         try:
@@ -122,7 +118,7 @@ class SponsorDB():
                                     VALUES (?,?,?,?,?)
                                     '''
             self._cursor.execute(q_write_subtitle, (
-            subtitle.video_id, subtitle.text, subtitle.is_sponsor, subtitle.start_time, subtitle.duration))
+                subtitle.video_id, subtitle.text, subtitle.is_sponsor, subtitle.start_time, subtitle.duration))
             self._sqliteConnection.commit()
         except sqlite3.IntegrityError as error:
 
@@ -131,9 +127,9 @@ class SponsorDB():
         except sqlite3.OperationalError as error:
             logging.error(f"Error while connecting to sqlite: {error}. Database locked. Iteration:{iteration}")
             time.sleep(1)
-            self.store_subtitle(subtitle,iteration+1)
+            self.store_subtitle(subtitle, iteration + 1)
 
-    def store_generated_subtitle(self, subtitle: SubtitleSegment,iteration:int=0):
+    def store_generated_subtitle(self, subtitle: SubtitleSegment, iteration: int = 0):
         if iteration >= 10:
             return
         try:
@@ -143,7 +139,7 @@ class SponsorDB():
                                     VALUES (?,?,?,?,?)
                                     '''
             self._cursor.execute(q_write_subtitle, (
-            subtitle.video_id, subtitle.text, subtitle.is_sponsor, subtitle.start_time, subtitle.duration))
+                subtitle.video_id, subtitle.text, subtitle.is_sponsor, subtitle.start_time, subtitle.duration))
             self._sqliteConnection.commit()
         except sqlite3.IntegrityError as error:
 
@@ -152,8 +148,16 @@ class SponsorDB():
         except sqlite3.OperationalError as error:
             logging.error(f"Error while connecting to sqlite: {error}. Database locked. Iteration:{iteration}")
             time.sleep(1)
-            self.store_subtitle(subtitle,iteration+1)
+            self.store_subtitle(subtitle, iteration + 1)
 
+    def update_subtitle(self, subtitle:SubtitleSegment):
+        try:
+            q_update_subtitle = '''UPDATE subtitles SET issponsor=?
+            WHERE videoid=? AND startTime=? AND duration=?'''
+            self._cursor.execute(q_update_subtitle, (subtitle.is_sponsor, subtitle.video_id,subtitle.start_time,subtitle.duration))
+            self._sqliteConnection.commit()
+        except sqlite3.IntegrityError as error:
+            logging.error("Error while connecting to sqlite", error, subtitle.video_id, subtitle.start_time)
     def get_all_sponsor_info(self):
         q_read_sponsor_info = '''SELECT * FROM sponsor_info
                                 '''
@@ -173,7 +177,7 @@ class SponsorDB():
         return self._cursor.fetchall()
 
     def get_subtitles_by_videoid(self, video_id: str) -> list:
-        q_read_subtitles = '''SELECT * FROM subtitles WHERE videoid = ?'''
+        q_read_subtitles = '''SELECT * FROM subtitles WHERE videoid = ? ORDER BY startTime ASC'''
         self._cursor.execute(q_read_subtitles, (video_id,))
         return self._cursor.fetchall()
 
@@ -183,12 +187,17 @@ class SponsorDB():
         return self._cursor.fetchall()
 
     def get_sponsor_info_by_video_id(self, video_id: str) -> list:
-        q_read_sponsor_info = '''SELECT * FROM sponsor_info WHERE videoid =?'''
+        q_read_sponsor_info = '''SELECT * FROM sponsor_info WHERE videoid =? ORDER BY startTime ASC'''
         self._cursor.execute(q_read_sponsor_info, (video_id,))
         return self._cursor.fetchall()
 
     def get_unique_video_ids_from_subtitles(self) -> list:
         q_read_subtitles = '''SELECT DISTINCT videoid FROM subtitles'''
+        self._cursor.execute(q_read_subtitles)
+        return self._cursor.fetchall()
+
+    def get_unique_video_ids_from_generated_subtitles(self) -> list:
+        q_read_subtitles = '''SELECT DISTINCT videoid FROM generated_subtitles'''
         self._cursor.execute(q_read_subtitles)
         return self._cursor.fetchall()
 
@@ -201,6 +210,21 @@ class SponsorDB():
         q_read_subtitles = '''SELECT 1 FROM subtitles WHERE videoid =? LIMIT 1'''
         self._cursor.execute(q_read_subtitles, (video_id,))
         return self._cursor.fetchone() is not None
+
+    def delete_subtitles_by_videoid(self, video_id: str):
+        q_delete_subtitles = '''DELETE FROM subtitles WHERE videoid = ? '''
+        self._cursor.execute(q_delete_subtitles, (video_id,))
+        self._sqliteConnection.commit()
+
+    def delete_generated_subtitles_by_videoid(self, video_id: str):
+        q_delete_subtitles = '''DELETE FROM generated_subtitles WHERE videoid = ? '''
+        self._cursor.execute(q_delete_subtitles, (video_id,))
+        self._sqliteConnection.commit()
+
+    def delete_sponsor_info_by_video_id(self,video_id: str):
+        q_delete_sponsor = '''DELETE FROM sponsor_info WHERE videoid = ? '''
+        self._cursor.execute(q_delete_sponsor, (video_id,))
+        self._sqliteConnection.commit()
 
 if __name__ == '__main__':
     my_sponsor_db = SponsorDB('data/SQLite_YTSP_subtitles.db')
