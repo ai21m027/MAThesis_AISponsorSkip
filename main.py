@@ -1,8 +1,10 @@
 import models.dualLSTMmodel as M
+import database as db
 import torch
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 import torch.nn.functional as F
+import random
 
 from subtitlesloader import SubtitlesDataset, collate_fn
 from tqdm import tqdm
@@ -21,8 +23,8 @@ import numpy as np
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 preds_stats = utils.predictions_analysis()
+MY_DB_PATH = 'data/SQLite_YTSP_subtitles.db'
 
-EPOCHS = 100
 
 class Accuracies(object):
     def __init__(self):
@@ -69,7 +71,7 @@ def train(model, args, epoch, dataset, logger, optimizer):
     model.train()
     total_loss = float(0)
     with tqdm(desc='Training', total=len(dataset)) as pbar:
-        for i, (data, target, paths) in enumerate(dataset):
+        for i, (data, target, video_ids) in enumerate(dataset):
             if i == args.stop_after:
                 break
 
@@ -80,24 +82,25 @@ def train(model, args, epoch, dataset, logger, optimizer):
             loss = model.criterion(output, target_var)
             loss.backward()
 
+
             optimizer.step()
-            total_loss += loss.data[0]
+            total_loss += loss.item()
             # logger.debug('Batch %s - Train error %7.4f', i, loss.data[0])
-            pbar.set_description('Training, loss={:.4}'.format(loss.data[0]))
+            pbar.set_description('Training, loss={:.4}'.format(loss.item()))
             # except Exception as e:
             # logger.info('Exception "%s" in batch %s', e, i)
             # logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
             # pass
 
     total_loss = total_loss / len(dataset)
-    logger.debug('Training Epoch: {}, Loss: {:.4}.'.format(epoch + 1, total_loss))
-    log_value('Training Loss', total_loss, epoch + 1)
+    logger.debug('Training Epoch: {}, Loss: {:.6}.'.format(epoch + 1, total_loss))
+    #log_value('Training Loss', total_loss, epoch + 1)
 
 def validate(model, args, epoch, dataset, logger):
     model.eval()
     with tqdm(desc='Validating', total=len(dataset)) as pbar:
         acc = Accuracies()
-        for i, (data, target, paths) in enumerate(dataset):
+        for i, (data, target, video_ids) in enumerate(dataset):
             if True:
                 if i == args.stop_after:
                     break
@@ -113,6 +116,7 @@ def validate(model, args, epoch, dataset, logger):
                 acc.update(output_softmax.data.cpu().numpy(), target)
 
 
+
             # except Exception as e:
             #     # logger.info('Exception "%s" in batch %s', e, i)
             #     logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
@@ -120,11 +124,12 @@ def validate(model, args, epoch, dataset, logger):
 
         epoch_pk, epoch_windiff, threshold = acc.calc_accuracy()
 
-        logger.info('Validating Epoch: {}, accuracy: {:.4}, Pk: {:.4}, Windiff: {:.4}, F1: {:.4} . '.format(epoch + 1,
+        logger.info('Validating Epoch: {}, accuracy: {:.4}, Pk: {:.4}, Windiff: {:.4}, F1: {:.6} . '.format(epoch + 1,
                                                                                                             preds_stats.get_accuracy(),
                                                                                                             epoch_pk,
                                                                                                             epoch_windiff,
                                                                                                             preds_stats.get_f1()))
+        logger.info(f'TN: {preds_stats.tn} FN: {preds_stats.fn} FP: {preds_stats.fp} TP {preds_stats.tp}')
         preds_stats.reset()
 
         return epoch_pk, threshold
@@ -178,19 +183,32 @@ def test(model, args, epoch, dataset, logger, threshold):
         return epoch_pk
 
 def main(args):
-    config_file = 'config/config.json'
+    config_file = './config/config.json'
     checkpoint_dir = 'checkpoints'
     checkpoint_path = Path(checkpoint_dir)
     checkpoint_path.mkdir(exist_ok=True)
     logger = utils.setup_logger(__name__, os.path.join(checkpoint_dir, 'train.log'))
-    logger.setLevel('debug')
 
     utils.read_config_file(config_file)
+    utils.config.update(args.__dict__)
     logger.debug('Running with config %s', utils.config)
     model = M.create()
     model = maybe_cuda(model)
 
-    train_dl = DataLoader(train_dataset, batch_size=args.bs, collate_fn=collate_fn, shuffle=True,
+    my_db = db.SponsorDB(MY_DB_PATH)
+    unique_videos = my_db.get_unique_video_ids_from_subtitles()
+    random.Random(args.seed).shuffle(unique_videos)
+    unique_videos = unique_videos[:args.datalen]
+
+
+    word2vec = gensim.models.KeyedVectors.load_word2vec_format(utils.config['word2vecfile'], binary=True)
+
+    train_dataset = SubtitlesDataset(MY_DB_PATH,word2vec,unique_videos[:int(len(unique_videos)*0.8)])
+    dev_dataset = SubtitlesDataset(MY_DB_PATH,word2vec,unique_videos[int(len(unique_videos)*0.8):int(len(unique_videos)*0.9)])
+    test_dataset = SubtitlesDataset(MY_DB_PATH,word2vec,unique_videos[int(len(unique_videos)*0.9):])
+
+
+    train_dl = DataLoader(train_dataset, batch_size=args.bs, collate_fn=collate_fn, shuffle=False,
                           num_workers=args.num_workers)
     dev_dl = DataLoader(dev_dataset, batch_size=args.test_bs, collate_fn=collate_fn, shuffle=False,
                         num_workers=args.num_workers)
@@ -201,7 +219,7 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     print(model)
     best_val_pk = 1.0
-    for j in range(EPOCHS):
+    for j in range(args.epochs):
         train(model, args, j, train_dl, logger, optimizer)
         with (checkpoint_path / 'model{:03d}.t7'.format(j)).open('wb') as f:
             torch.save(model, f)
@@ -214,15 +232,16 @@ if __name__ == '__main__':
     parser.add_argument('--bs', help='Batch size', type=int, default=8)
     parser.add_argument('--test_bs', help='Batch size', type=int, default=5)
     parser.add_argument('--epochs', help='Number of epochs to run', type=int, default=10)
-    parser.add_argument('--model', help='Model to run - will import and run')
+    #parser.add_argument('--model', help='Model to run - will import and run')
     parser.add_argument('--load_from', help='Location of a .t7 model file to load. Training will continue')
     parser.add_argument('--expname', help='Experiment name to appear on tensorboard', default='exp1')
     parser.add_argument('--checkpoint_dir', help='Checkpoint directory', default='checkpoints')
     parser.add_argument('--stop_after', help='Number of batches to stop after', default=None, type=int)
     parser.add_argument('--config', help='Path to config.json', default='config.json')
-    parser.add_argument('--wiki', help='Use wikipedia as dataset?', action='store_true')
+    #parser.add_argument('--wiki', help='Use wikipedia as dataset?', action='store_true')
     parser.add_argument('--num_workers', help='How many workers to use for data loading', type=int, default=0)
-    parser.add_argument('--high_granularity', help='Use high granularity for wikipedia dataset segmentation', action='store_true')
     parser.add_argument('--infer', help='inference_dir', type=str)
+    parser.add_argument('--seed', help='Seed for training selection', type=int, default=42)
+    parser.add_argument('--datalen', help='Length of training data to use', type=int, default=-1)
 
     main(parser.parse_args())
