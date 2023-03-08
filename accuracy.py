@@ -19,7 +19,8 @@ class Accuracy:
         h_boundaries = self.get_seg_boundaries(h, sentences_length)
         gold_boundaries = self.get_seg_boundaries(gold, sentences_length)
         pk, count_pk = self.pk(h_boundaries, gold_boundaries)
-        windiff, count_wd = -1, 400;# self.win_diff(h_boundaries, gold_boundaries)
+        windiff, count_wd = -1, 400;# self.win_diff(h_boundaries, gold_boundaries) Why?
+        #windiff, count_wd = self.win_diff(h_boundaries, gold_boundaries)
 
         if pk != -1:
             self.pk_to_weight.append((pk, count_pk))

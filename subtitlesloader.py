@@ -76,12 +76,15 @@ def read_subtitle_entry(entry, index, word2vec, train, return_w2v_tensors=True):
 class SubtitlesDataset(Dataset):
     def __init__(self, db_path, word2vec, videoidlist: list, train=False):
         # self.my_db_path = db_path
-        self.videoidlist = videoidlist
+        self.videoidlist = []
 
         my_db = db.SponsorDB(db_path, no_setup=True)
         self.subtitles_list = []
         for videoid in videoidlist:
-            self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
+            subtitles = my_db.get_subtitles_by_videoid(videoid)
+            if len(subtitles) <= 300:
+                self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
+                self.videoidlist.append(videoid)
 
         self.train = train
         self.word2vec = word2vec
@@ -92,7 +95,7 @@ class SubtitlesDataset(Dataset):
         return read_subtitle_entry(entry, index, self.word2vec, self.train)
 
     def __len__(self):
-        return len(self.videoidlist)
+        return len(self.subtitles_list)
 
 
 if __name__ == '__main__':

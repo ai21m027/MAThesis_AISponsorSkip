@@ -1,25 +1,26 @@
-import models.dualLSTMmodel as M
-import database as db
-import torch
-from torch.utils.data import DataLoader
-from torch.autograd import Variable
-import torch.nn.functional as F
-import random
-
-from subtitlesloader import SubtitlesDataset, collate_fn
-from tqdm import tqdm
-from argparse import ArgumentParser
-from utils import maybe_cuda
-import gensim
-import utils
-from tensorboard_logger import configure, log_value
+import logging
 import os
-import sys
-from pathlib2 import Path
-#from wiki_loader import WikipediaDataSet
-import accuracy
+import random
+from argparse import ArgumentParser
+
+import gensim
 import numpy as np
-#from termcolor import colored
+import torch
+import torch.nn.functional as F
+from pathlib2 import Path
+from torch.autograd import Variable
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+# from wiki_loader import WikipediaDataSet
+import accuracy
+import database as db
+import models.dualLSTMmodel as M
+import utils
+from subtitlesloader import SubtitlesDataset, collate_fn
+from utils import maybe_cuda
+
+# from termcolor import colored
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 preds_stats = utils.predictions_analysis()
@@ -82,7 +83,6 @@ def train(model, args, epoch, dataset, logger, optimizer):
             loss = model.criterion(output, target_var)
             loss.backward()
 
-
             optimizer.step()
             total_loss += loss.item()
             # logger.debug('Batch %s - Train error %7.4f', i, loss.data[0])
@@ -92,9 +92,10 @@ def train(model, args, epoch, dataset, logger, optimizer):
             # logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
             # pass
 
-    total_loss = total_loss / len(dataset)
-    logger.debug('Training Epoch: {}, Loss: {:.6}.'.format(epoch + 1, total_loss))
-    #log_value('Training Loss', total_loss, epoch + 1)
+    avg_loss = total_loss / len(dataset)
+    logger.info('Training Epoch: {}, Loss: {:.6}.'.format(epoch + 1, avg_loss))
+    # log_value('Training Loss', avg_loss, epoch + 1)
+
 
 def validate(model, args, epoch, dataset, logger):
     model.eval()
@@ -115,8 +116,6 @@ def validate(model, args, epoch, dataset, logger):
 
                 acc.update(output_softmax.data.cpu().numpy(), target)
 
-
-
             # except Exception as e:
             #     # logger.info('Exception "%s" in batch %s', e, i)
             #     logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
@@ -133,6 +132,7 @@ def validate(model, args, epoch, dataset, logger):
         preds_stats.reset()
 
         return epoch_pk, threshold
+
 
 def test(model, args, epoch, dataset, logger, threshold):
     model.eval()
@@ -182,12 +182,13 @@ def test(model, args, epoch, dataset, logger, threshold):
 
         return epoch_pk
 
+
 def main(args):
     config_file = './config/config.json'
     checkpoint_dir = 'checkpoints'
     checkpoint_path = Path(checkpoint_dir)
     checkpoint_path.mkdir(exist_ok=True)
-    logger = utils.setup_logger(__name__, os.path.join(checkpoint_dir, 'train.log'))
+    logger = utils.setup_logger(__name__, os.path.join(checkpoint_dir, 'train.log'), level=logging.DEBUG)
 
     utils.read_config_file(config_file)
     utils.config.update(args.__dict__)
@@ -200,13 +201,12 @@ def main(args):
     random.Random(args.seed).shuffle(unique_videos)
     unique_videos = unique_videos[:args.datalen]
 
-
     word2vec = gensim.models.KeyedVectors.load_word2vec_format(utils.config['word2vecfile'], binary=True)
 
-    train_dataset = SubtitlesDataset(MY_DB_PATH,word2vec,unique_videos[:int(len(unique_videos)*0.8)])
-    dev_dataset = SubtitlesDataset(MY_DB_PATH,word2vec,unique_videos[int(len(unique_videos)*0.8):int(len(unique_videos)*0.9)])
-    test_dataset = SubtitlesDataset(MY_DB_PATH,word2vec,unique_videos[int(len(unique_videos)*0.9):])
-
+    train_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[:int(len(unique_videos) * 0.8)])
+    dev_dataset = SubtitlesDataset(MY_DB_PATH, word2vec,
+                                   unique_videos[int(len(unique_videos) * 0.8):int(len(unique_videos) * 0.9)])
+    test_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[int(len(unique_videos) * 0.9):])
 
     train_dl = DataLoader(train_dataset, batch_size=args.bs, collate_fn=collate_fn, shuffle=False,
                           num_workers=args.num_workers)
@@ -214,7 +214,6 @@ def main(args):
                         num_workers=args.num_workers)
     test_dl = DataLoader(test_dataset, batch_size=args.test_bs, collate_fn=collate_fn, shuffle=False,
                          num_workers=args.num_workers)
-
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     print(model)
@@ -225,6 +224,7 @@ def main(args):
             torch.save(model, f)
         val_pk, threshold = validate(model, args, j, dev_dl, logger)
 
+
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--cuda', help='Use cuda?', action='store_true')
@@ -232,13 +232,13 @@ if __name__ == '__main__':
     parser.add_argument('--bs', help='Batch size', type=int, default=8)
     parser.add_argument('--test_bs', help='Batch size', type=int, default=5)
     parser.add_argument('--epochs', help='Number of epochs to run', type=int, default=10)
-    #parser.add_argument('--model', help='Model to run - will import and run')
+    # parser.add_argument('--model', help='Model to run - will import and run')
     parser.add_argument('--load_from', help='Location of a .t7 model file to load. Training will continue')
     parser.add_argument('--expname', help='Experiment name to appear on tensorboard', default='exp1')
     parser.add_argument('--checkpoint_dir', help='Checkpoint directory', default='checkpoints')
     parser.add_argument('--stop_after', help='Number of batches to stop after', default=None, type=int)
     parser.add_argument('--config', help='Path to config.json', default='config.json')
-    #parser.add_argument('--wiki', help='Use wikipedia as dataset?', action='store_true')
+    # parser.add_argument('--wiki', help='Use wikipedia as dataset?', action='store_true')
     parser.add_argument('--num_workers', help='How many workers to use for data loading', type=int, default=0)
     parser.add_argument('--infer', help='inference_dir', type=str)
     parser.add_argument('--seed', help='Seed for training selection', type=int, default=42)

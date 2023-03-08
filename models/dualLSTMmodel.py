@@ -1,14 +1,16 @@
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import torch.nn.functional as F
+from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from utils import maybe_cuda, setup_logger, unsort
-import numpy as np
-from times_profiler import profiler
 
-logger = setup_logger(__name__, 'train.log')
-profilerLogger = setup_logger("profilerLogger", 'profiler.log', True)
+from times_profiler import profiler
+from utils import maybe_cuda, setup_logger, unsort
+
+logger = setup_logger(__name__, 'train.log',no_screen=True)
+profilerLogger = setup_logger("profilerLogger", 'profiler.log', True,no_screen=True)
+
 
 def zero_state(module, batch_size):
     # * 2 is for the two directions
@@ -38,6 +40,7 @@ class SentenceEncodingRNN(nn.Module):
 
         return reshaped
 
+
 class Model(nn.Module):
     def __init__(self, sentence_encoder, hidden=128, num_layers=2):
         super(Model, self).__init__()
@@ -59,7 +62,6 @@ class Model(nn.Module):
 
         self.criterion = nn.CrossEntropyLoss()
 
-
     def pad(self, s, max_length):
         s_length = s.size()[0]
         v = Variable(maybe_cuda(s.unsqueeze(0).unsqueeze(0)))
@@ -67,11 +69,10 @@ class Model(nn.Module):
         shape = padded.size()
         return padded.view(shape[2], 1, shape[3])  # (max_length, 1, 300)
 
-
     def pad_document(self, d, max_document_length):
         d_length = d.size()[0]
         v = d.unsqueeze(0).unsqueeze(0)
-        padded = F.pad(v, (0, 0,0, max_document_length - d_length ))  # (1, 1, max_length, 300)
+        padded = F.pad(v, (0, 0, 0, max_document_length - d_length))  # (1, 1, max_length, 300)
         shape = padded.size()
         return padded.view(shape[2], 1, shape[3])  # (max_length, 1, 300)
 
@@ -79,12 +80,19 @@ class Model(nn.Module):
         profiler.init()  # 0
 
         batch_size = len(batch)
-
+        nr_excluded_docs = 0
         sentences_per_doc = []
         all_batch_sentences = []
         for document in batch:
-            all_batch_sentences.extend(document)
-            sentences_per_doc.append(len(document))
+            # filter out empty documents
+            if len(document) != 0:
+                all_batch_sentences.extend(document)
+                sentences_per_doc.append(len(document))
+            else:
+                nr_excluded_docs += 1
+
+        # adjust batch_size for empty documents
+        batch_size = batch_size - nr_excluded_docs
 
         lengths = [s.size()[0] for s in all_batch_sentences]
         sort_order = np.argsort(lengths)[::-1]
@@ -92,8 +100,7 @@ class Model(nn.Module):
         sorted_lengths = [s.size()[0] for s in sorted_sentences]
 
         max_length = max(lengths)
-        logger.debug('Num sentences: %s, max sentence length: %s',
-                     sum(sentences_per_doc), max_length)
+        logger.debug('Num sentences: %s, max sentence length: %s',sum(sentences_per_doc), max_length)
 
         padded_sentences = [self.pad(s, max_length) for s in sorted_sentences]
         big_tensor = torch.cat(padded_sentences, 1)  # (max_length, batch size, 300)
@@ -108,7 +115,7 @@ class Model(nn.Module):
         encoded_documents = []
         for sentences_count in sentences_per_doc:
             end_index = index + sentences_count
-            encoded_documents.append(unsorted_encodings[index : end_index, :])
+            encoded_documents.append(unsorted_encodings[index: end_index, :])
             index = end_index
 
         doc_sizes = [doc.size()[0] for doc in encoded_documents]
@@ -135,6 +142,7 @@ class Model(nn.Module):
 
         profiler.finish(profilerLogger)  # 5
         return x
+
 
 def create():
     sentence_encoder = SentenceEncodingRNN(input_size=300,
