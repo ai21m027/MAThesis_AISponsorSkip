@@ -28,7 +28,10 @@ def plausibility_check_and_clean(video_id,subtitle_type='manual'):
 def add_sponsor_info_to_subtitle(video_id: str,subtitle_type='manual'):
     my_db = SQL.SponsorDB(MY_DB_PATH)
     sponsor_info_list = my_db.get_sponsor_info_by_video_id(video_id)
-    subtitles_list = my_db.get_subtitles_by_videoid(video_id)
+    if subtitle_type == 'manual':
+        subtitles_list = my_db.get_subtitles_by_videoid(video_id)
+    elif subtitle_type == 'generated':
+        subtitles_list = my_db.get_generated_subtitles_by_videoid(video_id)
     if len(subtitles_list) < 20:
         logging.error(f'There are not enough subtitles for video {video_id}')
         return 1
@@ -71,6 +74,7 @@ if __name__ == '__main__':
     for video_id in tqdm.tqdm(unique_videos,total=len(unique_videos)):
         short_count+=plausibility_check_and_clean(video_id[0],subtitle_type='generated')
     print(f'There are {short_count} too short subtitles of {len(unique_videos)} videos')
+    short_count = 0
     for video_id in tqdm.tqdm(unique_videos,total=len(unique_videos)):
         short_count+= add_sponsor_info_to_subtitle(video_id[0],subtitle_type='generated')
     print(f'There are {short_count} too short subtitles of {len(unique_videos)} videos')
