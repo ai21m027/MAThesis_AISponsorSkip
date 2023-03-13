@@ -84,6 +84,9 @@ class Model(nn.Module):
         sentences_per_doc = []
         all_batch_sentences = []
         for document in batch:
+            all_batch_sentences.extend(document)
+            sentences_per_doc.append(len(document))
+        """
             # filter out empty documents
             if len(document) != 0:
                 all_batch_sentences.extend(document)
@@ -93,6 +96,7 @@ class Model(nn.Module):
 
         # adjust batch_size for empty documents
         batch_size = batch_size - nr_excluded_docs
+        """
 
         lengths = [s.size()[0] for s in all_batch_sentences]
         sort_order = np.argsort(lengths)[::-1]
@@ -144,8 +148,8 @@ class Model(nn.Module):
         return x
 
 
-def create():
-    sentence_encoder = SentenceEncodingRNN(input_size=300,
-                                           hidden=256,
-                                           num_layers=2)
-    return Model(sentence_encoder, hidden=256, num_layers=2)
+def create(input_size=300,hidden_size=256,num_layers=2):
+    sentence_encoder = SentenceEncodingRNN(input_size=input_size,
+                                           hidden=hidden_size,
+                                           num_layers=num_layers)
+    return Model(sentence_encoder, hidden=hidden_size, num_layers=num_layers)
