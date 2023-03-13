@@ -1,8 +1,22 @@
-pandas
+pandas~=1.5.3
 pyarrow
 fastparquet
 google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2
 youtube_transcript_api
-rich
+rich~=13.3.1
+tqdm~=4.64.1
+pathlib2~=2.3.7.post1
+gensim~=4.3.0
+tensorboard_logger
+segeval~=2.0.11
+nltk~=3.8.1
+tensorflow
+numpy~=1.24.1
+httplib2~=0.21.0
+
+-f https://download.pytorch.org/whl/cu113/torch_stable.html
+torch>=1.10.0+cu113
+torchvision
+torchaudio

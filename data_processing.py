@@ -1,65 +1,82 @@
 import pandas as pd
-import pickle
-from subtitle_download import SubtitleToStorage
-from rich.progress import track
+import tqdm
+import database as SQL
+import logging
+import data_download_parallel
+
 pd.set_option('display.max_columns', None)
 
+MY_DB_PATH = 'data/SQLite_YTSP_subtitles.db'
 
-if __name__=='__main__':
-    """
-    data = pd.read_feather('data/sponsorTimes.feather')
-    data = data.sort_values('views',ascending=False)
-    data = data.reset_index(drop=True)
-    print(data.loc[0,'videoID'])
-    print(data.loc[0:1000])
-    """
-    data = pd.read_feather('data/sponsorTimes_best1000.feather')
-    #print(data.loc[0])
-    storage_config={'type':'return_value'}
+def plausibility_check_and_clean(video_id,subtitle_type='manual'):
+    my_db = SQL.SponsorDB(MY_DB_PATH,no_setup=True)
+    if subtitle_type == 'manual':
+        subtitles_list = my_db.get_subtitles_by_videoid(video_id)
+    elif subtitle_type == 'generated':
+        subtitles_list = my_db.get_generated_subtitles_by_videoid(video_id)
+    else:
+        raise ValueError (f'Unknown subtitle_type {subtitle_type}')
+    if len(subtitles_list) < 20:
+        logging.error(f'There are not enough subtitles for video {video_id}, only {len(subtitles_list)} are available')
+        if subtitle_type == 'manual':
+            my_db.delete_subtitles_by_videoid(video_id)
+        elif subtitle_type == 'generated':
+            my_db.delete_generated_subtitles_by_videoid(video_id)
+        return 1
+    return 0
 
-    clean_data=pd.DataFrame(columns=['videoID','startTime','endTime','votes','incorrectVotes','subtitleID'])
-    subtitle_ID = 0
-    subtitle_dict = {}
-    data_length = len(data)
-    for i in track(range(data_length),description='Downloading subtitles'):
-        start_time = data.loc[i,'startTime']
-        end_time = data.loc[i,'endTime']
-        downloader = SubtitleToStorage.SubtitlesToStorage(source='youtube',video_id=data.loc[i,'videoID'],storage_config=storage_config)
-        subtitles,transcript = downloader.save()
-        if subtitles is None:
-            continue
-        in_subtitle=False
-        categorized_subtitles = []
-        for element in transcript:
-            if float(element['start']) >= start_time and float(element['start']) < end_time and not in_subtitle:
-                in_subtitle=True
-                categorized_subtitles.append({'text':element['text'],'category':'sponsored'})
-                # if sponsor segment is only on transcript segment long set false immediatly
-                if (float(element['start']) + float(element['duration'])) >= end_time and in_subtitle:
-                    in_subtitle = False
-            elif (float(element['start'])+float(element['duration'])) >= end_time and in_subtitle:
-                in_subtitle = False
-                #sponsor_text += element['text']
-            elif in_subtitle:
-                categorized_subtitles.append({'text':element['text'],'category':'sponsored'})
-            else:
-                categorized_subtitles.append({'text': element['text'], 'category': 'not-sponsored'})
-        #print(categorized_subtitles)
-        #print()
-        df_catsub = pd.DataFrame(categorized_subtitles)
-        subtitle_dict[subtitle_ID]=df_catsub
-        short_data = data.loc[i,['videoID','startTime','endTime','votes','incorrectVotes']]
-        short_data =short_data.to_frame().transpose()
-        short_data['subtitleID'] = [subtitle_ID]
-        clean_data = pd.concat([clean_data,short_data])
-        clean_data = clean_data.reset_index(drop=True)
-        clean_data.to_feather('data/current_progress.feather')
-        with open('data/saved_subtitle_dictionary.pkl', 'wb') as f:
-            pickle.dump(subtitle_dict, f)
-        subtitle_ID+=1
-    clean_data = clean_data.reset_index(drop=True)
-    clean_data.to_feather('data/current_progress.feather')
-    with open('data/saved_subtitle_dictionary.pkl', 'wb') as f:
-        pickle.dump(subtitle_dict, f)
-    print(clean_data.loc[3])
-    print(subtitle_dict[clean_data.loc[3,'subtitleID']])
+def add_sponsor_info_to_subtitle(video_id: str,subtitle_type='manual'):
+    my_db = SQL.SponsorDB(MY_DB_PATH)
+    sponsor_info_list = my_db.get_sponsor_info_by_video_id(video_id)
+    if subtitle_type == 'manual':
+        subtitles_list = my_db.get_subtitles_by_videoid(video_id)
+    elif subtitle_type == 'generated':
+        subtitles_list = my_db.get_generated_subtitles_by_videoid(video_id)
+    if len(subtitles_list) < 20:
+        logging.error(f'There are not enough subtitles for video {video_id}')
+        return 1
+    for sponsor_info in sponsor_info_list:
+        sponsor_start = sponsor_info[2]
+        sponsor_end = sponsor_info[3]
+        if sponsor_start == 0.0 and sponsor_end == 0.0:
+            logging.error(f'Sponsor info for video {video_id} starts and ends with 0.0')
+            if len(sponsor_info) == 1:
+                my_db.delete_sponsor_info_by_video_id(video_id)
+                my_db.delete_subtitles_by_videoid(video_id)
+        #print(sponsor_start, sponsor_end)
+        for idx,subtitle in enumerate(subtitles_list):
+            segment_start = subtitle[3]
+            segment_duration = subtitle[4]
+            text = subtitle[1]
+            #print(segment_start, segment_duration)
+            # Plus 1 second is for margin of error
+            if segment_start > sponsor_start and segment_start + segment_duration < sponsor_end+1:
+                #print(text)
+                segment = SQL.SubtitleSegment(video_id=video_id,text=text,start_time=segment_start,duration=segment_duration,is_sponsor=True)
+                if subtitle_type == 'manual':
+                    my_db.update_subtitle(segment)
+                elif subtitle_type == 'generated':
+                    my_db.update_generated_subtitle(segment)
+                else:
+                    raise ValueError(f'Unknown subtitle_type {subtitle_type}')
+    return 0
+
+if __name__ == '__main__':
+    logging.basicConfig(filename='log/processing_subtitles.log', encoding='utf-8', level=logging.INFO,
+                        format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    my_db = SQL.SponsorDB(MY_DB_PATH)
+
+    unique_videos = my_db.get_unique_video_ids_from_generated_subtitles()
+    print(len(unique_videos))
+
+    short_count = 0
+    print('Checking short subtitles...')
+    for video_id in tqdm.tqdm(unique_videos,total=len(unique_videos)):
+        short_count+=plausibility_check_and_clean(video_id[0],subtitle_type='generated')
+    print(f'There are {short_count} too short subtitles of {len(unique_videos)} videos')
+    short_count = 0
+    for video_id in tqdm.tqdm(unique_videos,total=len(unique_videos)):
+        short_count+= add_sponsor_info_to_subtitle(video_id[0],subtitle_type='generated')
+    print(f'There are {short_count} too short subtitles of {len(unique_videos)} videos')
+    exit()
+
