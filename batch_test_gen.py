@@ -10,6 +10,7 @@ if __name__ == '__main__':
     epochs = 10
     datatype = []
     learning_type = ['classification', 'segmentation']
+    learning_rate = [0.1, 0.01, 0.001]
     datalength = -1
     os.remove(batch_file)
 
