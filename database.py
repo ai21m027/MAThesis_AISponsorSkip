@@ -89,10 +89,11 @@ class SponsorDB():
         self._cursor.execute(q_create_table)
         self._sqliteConnection.commit()
         logging.debug('Table generated_subtitles ok')
-        q_create_index = '''CREATE INDEX IF NOT EXISTS vidid_idx ON generated_subtitles (videoid)'''
+        q_create_index = '''CREATE INDEX IF NOT EXISTS gen_vidid_idx ON generated_subtitles (videoid)'''
         self._cursor.execute(q_create_index)
         self._sqliteConnection.commit()
         logging.debug('vidid_idx on subtitles ok')
+
 
     def store_sponsor_info(self, s_info: SponsorInfo):
         try:

@@ -9,11 +9,13 @@ pd.set_option('display.max_columns', None)
 MY_DB_PATH = 'data/SQLite_YTSP_subtitles.db'
 
 def plausibility_check_and_clean(video_id,subtitle_type='manual'):
-    my_db = SQL.SponsorDB(MY_DB_PATH)
+    my_db = SQL.SponsorDB(MY_DB_PATH,no_setup=True)
     if subtitle_type == 'manual':
         subtitles_list = my_db.get_subtitles_by_videoid(video_id)
     elif subtitle_type == 'generated':
         subtitles_list = my_db.get_generated_subtitles_by_videoid(video_id)
+    else:
+        raise ValueError (f'Unknown subtitle_type {subtitle_type}')
     if len(subtitles_list) < 20:
         logging.error(f'There are not enough subtitles for video {video_id}, only {len(subtitles_list)} are available')
         if subtitle_type == 'manual':
