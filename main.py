@@ -75,11 +75,20 @@ def train(model, args, epoch, dataset, logger, optimizer):
         for i, (data, target, video_ids) in enumerate(dataset):
             if i == args.stop_after:
                 break
-
+            # remove empty data, likely from preprocessing
+            clean_data = []
+            clean_targets = []
+            for idx,element in enumerate(data):
+                if len(element) == 0:
+                    logger.info(f'Empty data @ {video_ids[idx]}')
+                else:
+                    clean_data.append(element)
+                    clean_targets.append(target[idx])
             pbar.update()
             model.zero_grad()
-            output = model(data)
-            target_var = Variable(maybe_cuda(torch.cat(target, 0), args.cuda), requires_grad=False)
+            output = model(clean_data)
+            #output_softmax = F.softmax(output, 1)
+            target_var = Variable(maybe_cuda(torch.cat(clean_targets, 0), args.cuda), requires_grad=False)
             loss = model.criterion(output, target_var)
             loss.backward()
 
@@ -101,33 +110,48 @@ def validate(model, args, epoch, dataset, logger):
     model.eval()
     with tqdm(desc='Validating', total=len(dataset)) as pbar:
         acc = Accuracies()
+        total_loss=float(0)
         for i, (data, target, video_ids) in enumerate(dataset):
             if True:
                 if i == args.stop_after:
                     break
+                # remove empty data, likely from preprocessing
+                clean_data = []
+                clean_targets = []
+                for idx, element in enumerate(data):
+                    if len(element) == 0:
+                        logger.info(f'Empty data @ {video_ids[idx]}')
+                        my_db = db.SponsorDB(MY_DB_PATH,no_setup=True)
+                        my_db.delete_subtitles_by_videoid(video_ids[idx])
+                        logger.info(f'Empty data @ {video_ids[idx]} deleted')
+                    else:
+                        clean_data.append(element)
+                        clean_targets.append(target[idx])
                 pbar.update()
-                output = model(data)
-                output_softmax = F.softmax(output, 1)
-                targets_var = Variable(maybe_cuda(torch.cat(target, 0), args.cuda), requires_grad=False)
 
+                output = model(clean_data)
+                output_softmax = F.softmax(output, 1)
+                targets_var = Variable(maybe_cuda(torch.cat(clean_targets, 0), args.cuda), requires_grad=False)
+                loss = model.criterion(output, targets_var)
                 output_seg = output.data.cpu().numpy().argmax(axis=1)
                 target_seg = targets_var.data.cpu().numpy()
                 preds_stats.add(output_seg, target_seg)
 
-                acc.update(output_softmax.data.cpu().numpy(), target)
-
+                acc.update(output_softmax.data.cpu().numpy(), clean_targets)
+                total_loss += loss.item()
             # except Exception as e:
             #     # logger.info('Exception "%s" in batch %s', e, i)
             #     logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
             #     pass
 
+        avg_loss = total_loss / len(dataset)
         epoch_pk, epoch_windiff, threshold = acc.calc_accuracy()
 
-        logger.info('Validating Epoch: {}, accuracy: {:.4}, Pk: {:.4}, Windiff: {:.4}, F1: {:.6} . '.format(epoch + 1,
+        logger.info('Validating Epoch: {}, accuracy: {:.4}, Pk: {:.4}, Windiff: {:.4}, F1: {:.6} ,Loss: {:.6}'.format(epoch + 1,
                                                                                                             preds_stats.get_accuracy(),
                                                                                                             epoch_pk,
                                                                                                             epoch_windiff,
-                                                                                                            preds_stats.get_f1()))
+                                                                                                            preds_stats.get_f1(),avg_loss))
         logger.info(f'TN: {preds_stats.tn} FN: {preds_stats.fn} FP: {preds_stats.fp} TP {preds_stats.tp}')
         preds_stats.reset()
 
@@ -138,21 +162,31 @@ def test(model, args, epoch, dataset, logger, threshold):
     model.eval()
     with tqdm(desc='Testing', total=len(dataset)) as pbar:
         acc = accuracy.Accuracy()
-        for i, (data, target, paths) in enumerate(dataset):
+        for i, (data, target, video_ids) in enumerate(dataset):
             if True:
                 if i == args.stop_after:
                     break
+
+                #remove empty data, likely from preprocessing
+                clean_data = []
+                clean_targets = []
+                for idx, element in enumerate(data):
+                    if len(element) == 0:
+                        logger.info(f'Empty data @ {video_ids[idx]}')
+                    else:
+                        clean_data.append(element)
+                        clean_targets.append(target[idx])
                 pbar.update()
-                output = model(data)
+                output = model(clean_data)
                 output_softmax = F.softmax(output, 1)
-                targets_var = Variable(maybe_cuda(torch.cat(target, 0), args.cuda), requires_grad=False)
+                targets_var = Variable(maybe_cuda(torch.cat(clean_targets, 0), args.cuda), requires_grad=False)
                 output_seg = output.data.cpu().numpy().argmax(axis=1)
                 target_seg = targets_var.data.cpu().numpy()
                 preds_stats.add(output_seg, target_seg)
 
                 current_idx = 0
 
-                for k, t in enumerate(target):
+                for k, t in enumerate(clean_targets):
                     document_sentence_count = len(t)
                     to_idx = int(current_idx + document_sentence_count)
 
@@ -185,7 +219,7 @@ def test(model, args, epoch, dataset, logger, threshold):
 
 def main(args):
     config_file = './config/config.json'
-    checkpoint_dir = 'checkpoints'
+    checkpoint_dir = args.checkpoint_dir
     checkpoint_path = Path(checkpoint_dir)
     checkpoint_path.mkdir(exist_ok=True)
     logger = utils.setup_logger(__name__, os.path.join(checkpoint_dir, 'train.log'), level=logging.DEBUG)
@@ -193,7 +227,7 @@ def main(args):
     utils.read_config_file(config_file)
     utils.config.update(args.__dict__)
     logger.debug('Running with config %s', utils.config)
-    model = M.create()
+    model = M.create(hidden_size=args.hidden_size,num_layers=args.num_layers)
     model = maybe_cuda(model)
 
     my_db = db.SponsorDB(MY_DB_PATH)
@@ -228,7 +262,7 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--cuda', help='Use cuda?', action='store_true')
-    parser.add_argument('--test', help='Test mode? (e.g fake word2vec)', action='store_true')
+    #parser.add_argument('--test', help='Test mode? (e.g fake word2vec)', action='store_true')
     parser.add_argument('--bs', help='Batch size', type=int, default=8)
     parser.add_argument('--test_bs', help='Batch size', type=int, default=5)
     parser.add_argument('--epochs', help='Number of epochs to run', type=int, default=10)
@@ -240,8 +274,10 @@ if __name__ == '__main__':
     parser.add_argument('--config', help='Path to config.json', default='config.json')
     # parser.add_argument('--wiki', help='Use wikipedia as dataset?', action='store_true')
     parser.add_argument('--num_workers', help='How many workers to use for data loading', type=int, default=0)
-    parser.add_argument('--infer', help='inference_dir', type=str)
+    #parser.add_argument('--infer', help='inference_dir', type=str)
     parser.add_argument('--seed', help='Seed for training selection', type=int, default=42)
     parser.add_argument('--datalen', help='Length of training data to use', type=int, default=-1)
+    parser.add_argument('--num_layers', help='Number of layers per LSTM', type=int, default=2)
+    parser.add_argument('--hidden_size', help='Size of hidden layers', type=int, default=256)
 
     main(parser.parse_args())
