@@ -237,10 +237,10 @@ def main(args):
 
     word2vec = gensim.models.KeyedVectors.load_word2vec_format(utils.config['word2vecfile'], binary=True)
 
-    train_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[:int(len(unique_videos) * 0.8)])
+    train_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[:int(len(unique_videos) * 0.8)],max_segments=args.max_segment_number)
     dev_dataset = SubtitlesDataset(MY_DB_PATH, word2vec,
-                                   unique_videos[int(len(unique_videos) * 0.8):int(len(unique_videos) * 0.9)])
-    test_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[int(len(unique_videos) * 0.9):])
+                                   unique_videos[int(len(unique_videos) * 0.8):int(len(unique_videos) * 0.9)],max_segments=args.max_segment_number)
+    test_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[int(len(unique_videos) * 0.9):],max_segments=args.max_segment_number)
 
     train_dl = DataLoader(train_dataset, batch_size=args.bs, collate_fn=collate_fn, shuffle=False,
                           num_workers=args.num_workers)
@@ -279,5 +279,6 @@ if __name__ == '__main__':
     parser.add_argument('--datalen', help='Length of training data to use', type=int, default=-1)
     parser.add_argument('--num_layers', help='Number of layers per LSTM', type=int, default=2)
     parser.add_argument('--hidden_size', help='Size of hidden layers', type=int, default=256)
+    parser.add_argument('--max_segment_number', help='Maximum number of segments in a video', type=int, default=300)
 
     main(parser.parse_args())

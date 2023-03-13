@@ -85,7 +85,7 @@ def read_subtitle_entry(entry, index, word2vec, train, return_w2v_tensors=True,t
 
 # Returns a list of batch_size that contains a list of sentences, where each word is encoded using word2vec.
 class SubtitlesDataset(Dataset):
-    def __init__(self, db_path, word2vec, videoidlist: list, train=False,type='classification',mode='subtitles_db',excute_subtitles=None):
+    def __init__(self, db_path:str, word2vec, videoidlist: list, train:bool=False,type:str='classification',mode:str='subtitles_db',excute_subtitles:list=None,max_segments:int=None):
         # self.my_db_path = db_path
         self.videoidlist = []
         self.type = type
@@ -95,7 +95,11 @@ class SubtitlesDataset(Dataset):
         if mode == 'subtitles_db':
             for videoid in videoidlist:
                 subtitles = my_db.get_subtitles_by_videoid(videoid)
-                if len(subtitles) <= 300:
+                if max_segments is not None:
+                    if len(subtitles) <= max_segments:
+                        self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
+                        self.videoidlist.append(videoid)
+                else:
                     self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
                     self.videoidlist.append(videoid)
         elif mode == 'generated_subtitles_db':
