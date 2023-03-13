@@ -213,4 +213,5 @@ dmypy.json
 
 data
 checkpoints
+word2vec
 *.log

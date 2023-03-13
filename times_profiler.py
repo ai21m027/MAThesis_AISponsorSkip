@@ -3,7 +3,7 @@ from timeit import default_timer as timer
 
 class profiler():
 
-    segments = []
+    segments:list = []
     start = 0
     end = 0
 
