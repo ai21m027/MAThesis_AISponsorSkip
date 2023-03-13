@@ -17,7 +17,7 @@ def plausibility_check_and_clean(video_id):
         return 1
     return 0
 
-def add_sponsor_info_to_subtitle(video_id: str):
+def add_sponsor_info_to_subtitle(video_id: str,subtitle_type='manual'):
     my_db = SQL.SponsorDB(MY_DB_PATH)
     sponsor_info_list = my_db.get_sponsor_info_by_video_id(video_id)
     subtitles_list = my_db.get_subtitles_by_videoid(video_id)
@@ -42,7 +42,12 @@ def add_sponsor_info_to_subtitle(video_id: str):
             if segment_start > sponsor_start and segment_start + segment_duration < sponsor_end+1:
                 #print(text)
                 segment = SQL.SubtitleSegment(video_id=video_id,text=text,start_time=segment_start,duration=segment_duration,is_sponsor=True)
-                my_db.update_subtitle(segment)
+                if subtitle_type == 'manual':
+                    my_db.update_subtitle(segment)
+                elif subtitle_type == 'generated':
+                    my_db.update_generated_subtitle(segment)
+                else:
+                    raise ValueError(f'Unknown subtitle_type {subtitle_type}')
     return 0
 
 if __name__ == '__main__':
@@ -50,9 +55,7 @@ if __name__ == '__main__':
                         format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     my_db = SQL.SponsorDB(MY_DB_PATH)
 
-    #data_download_parallel.download_and_write_subtitles('-VPFNnmJN-s',ignore_duplicate=True)
-    #exit()
-    unique_videos = my_db.get_unique_video_ids_from_subtitles()
+    unique_videos = my_db.get_unique_video_ids_from_generated_subtitles()
     print(len(unique_videos))
 
     short_count = 0
@@ -60,14 +63,8 @@ if __name__ == '__main__':
     for video_id in tqdm.tqdm(unique_videos,total=len(unique_videos)):
         short_count+=plausibility_check_and_clean(video_id[0])
     print(f'There are {short_count} too short subtitles of {len(unique_videos)} videos')
-    #exit()
     for video_id in tqdm.tqdm(unique_videos,total=len(unique_videos)):
-        #print(video_id[0])
-        short_count+= add_sponsor_info_to_subtitle(video_id[0])
+        short_count+= add_sponsor_info_to_subtitle(video_id[0],subtitle_type='generated')
     print(f'There are {short_count} too short subtitles of {len(unique_videos)} videos')
     exit()
 
-
-    for video_id in unique_videos:
-        add_sponsor_info_to_subtitle(video_id[0])
-    # print(data)
