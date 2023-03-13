@@ -158,6 +158,16 @@ class SponsorDB():
             self._sqliteConnection.commit()
         except sqlite3.IntegrityError as error:
             logging.error("Error while connecting to sqlite", error, subtitle.video_id, subtitle.start_time)
+
+    def update_generated_subtitle(self, subtitle:SubtitleSegment):
+        try:
+            q_update_subtitle = '''UPDATE generated_subtitles SET issponsor=?
+            WHERE videoid=? AND startTime=? AND duration=?'''
+            self._cursor.execute(q_update_subtitle, (subtitle.is_sponsor, subtitle.video_id,subtitle.start_time,subtitle.duration))
+            self._sqliteConnection.commit()
+        except sqlite3.IntegrityError as error:
+            logging.error("Error while connecting to sqlite", error, subtitle.video_id, subtitle.start_time)
+
     def get_all_sponsor_info(self):
         q_read_sponsor_info = '''SELECT * FROM sponsor_info
                                 '''
@@ -178,6 +188,11 @@ class SponsorDB():
 
     def get_subtitles_by_videoid(self, video_id: str) -> list:
         q_read_subtitles = '''SELECT * FROM subtitles WHERE videoid = ? ORDER BY startTime ASC'''
+        self._cursor.execute(q_read_subtitles, (video_id,))
+        return self._cursor.fetchall()
+
+    def get_generated_subtitles_by_videoid(self, video_id: str) -> list:
+        q_read_subtitles = '''SELECT * FROM generated_subtitles WHERE videoid = ? ORDER BY startTime ASC'''
         self._cursor.execute(q_read_subtitles, (video_id,))
         return self._cursor.fetchall()
 
