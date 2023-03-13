@@ -11,7 +11,7 @@ import numpy as np
 
 logger = utils.setup_logger(__name__, 'train.log')
 
-special_tokens = []
+special_tokens:list = []
 
 def collate_fn(batch):
     batched_data = []
@@ -49,7 +49,7 @@ def collate_fn(batch):
 
 
 
-def read_subtitle_entry(entry, index, word2vec, train, return_w2v_tensors=True):
+def read_subtitle_entry(entry, index, word2vec, train, return_w2v_tensors=True,type='classification'):
     sentences = [segment[1] for segment in entry]
     video_id = entry[0][0]
 
@@ -66,25 +66,49 @@ def read_subtitle_entry(entry, index, word2vec, train, return_w2v_tensors=True):
             new_text.append([word_model(w, word2vec) for w in words])
         else:
             new_text.append(words)
-
-        targets.append(entry[idx][2])
+        if type == 'classification':
+            targets.append(entry[idx][2])
+        elif type == 'segmentation':
+            if idx == 0:
+                targets.append(0)
+            elif idx == len(sentences) - 1:
+                # 1 if last sentence is sponsor, 0 if not to differentiate between sponsor and beginning of next video in batch
+                targets.append(entry[idx][2])
+            else:
+                if entry[idx - 1][2] != entry[idx][2]:
+                    targets.append(1)
+                else:
+                    targets.append(0)
 
     return new_text, targets, video_id
 
 
 # Returns a list of batch_size that contains a list of sentences, where each word is encoded using word2vec.
 class SubtitlesDataset(Dataset):
-    def __init__(self, db_path, word2vec, videoidlist: list, train=False):
+    def __init__(self, db_path, word2vec, videoidlist: list, train=False,type='classification',mode='subtitles_db',excute_subtitles=None):
         # self.my_db_path = db_path
         self.videoidlist = []
+        self.type = type
 
         my_db = db.SponsorDB(db_path, no_setup=True)
         self.subtitles_list = []
-        for videoid in videoidlist:
-            subtitles = my_db.get_subtitles_by_videoid(videoid)
-            if len(subtitles) <= 300:
-                self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
-                self.videoidlist.append(videoid)
+        if mode == 'subtitles_db':
+            for videoid in videoidlist:
+                subtitles = my_db.get_subtitles_by_videoid(videoid)
+                if len(subtitles) <= 300:
+                    self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
+                    self.videoidlist.append(videoid)
+        elif mode == 'generated_subtitles_db':
+            for videoid in videoidlist:
+                subtitles = my_db.get_generated_subtitles_by_videoid(videoid)
+                if len(subtitles) <= 300:
+                    self.subtitles_list.append(my_db.get_generated_subtitles_by_videoid(videoid))
+                    self.videoidlist.append(videoid)
+        elif mode == 'execute':
+            if excute_subtitles is None:
+                exit('No excute_subtitles provided')
+            self.subtitles_list.append(excute_subtitles)
+            self.videoidlist.append(excute_subtitles[0][0])
 
         self.train = train
         self.word2vec = word2vec
@@ -92,7 +116,7 @@ class SubtitlesDataset(Dataset):
     def __getitem__(self, index):
         entry = self.subtitles_list[index]
         # returns text, targets, video_id
-        return read_subtitle_entry(entry, index, self.word2vec, self.train)
+        return read_subtitle_entry(entry, index, self.word2vec, self.train,self.type)
 
     def __len__(self):
         return len(self.subtitles_list)
