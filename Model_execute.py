@@ -118,20 +118,19 @@ def output_to_timestamps_downloaded(output, subtitles):
         if prev_target != target and target == 1 and not in_segment:
             in_segment = True
             start_time = subtitles[idx][3]
-            end_time = start_time
         elif (prev_target != target and target == 0 and in_segment) :
+            end_time = subtitles[idx][3]
             segments_list.append((str(timedelta(seconds=start_time)), str(timedelta(seconds=end_time))))
             text_list.append('----------------------------------------------------------------')
             in_segment = False
         elif idx == len(output) - 1 and in_segment:
+            end_time = subtitles[idx][3]
             duration = subtitles[idx][4]
             end_time += duration
             text_list.append(subtitles[idx][1])
             text_list.append('----------------------------------------------------------------')
             segments_list.append((str(timedelta(seconds=start_time)), str(timedelta(seconds=end_time))))
         if in_segment:
-            duration = subtitles[idx][4]
-            end_time += duration
             text_list.append(subtitles[idx][1])
 
         prev_target = target
@@ -144,7 +143,7 @@ def main(args):
     test_video_id = args.videoid
     config_file = './config/config.json'
     utils.read_config_file(config_file)
-    model_path = r'checkpoints/model008.t7'
+    model_path = r'checkpoints/64_4_10_42/model004.t7'
     with open(model_path, 'rb') as f:
         model = torch.load(f)
     device = torch.device('cpu')
