@@ -143,7 +143,7 @@ def main(args):
     test_video_id = args.videoid
     config_file = './config/config.json'
     utils.read_config_file(config_file)
-    model_path = r'checkpoints/64_4_10_42/model004.t7'
+    model_path = r'checkpoints/model009.t7'
     with open(model_path, 'rb') as f:
         model = torch.load(f)
     device = torch.device('cpu')

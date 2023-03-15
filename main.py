@@ -81,6 +81,9 @@ def train(model, args, epoch, dataset, logger, optimizer):
             for idx,element in enumerate(data):
                 if len(element) == 0:
                     logger.info(f'Empty data @ {video_ids[idx]}')
+                    my_db = db.SponsorDB(MY_DB_PATH, no_setup=True)
+                    my_db.delete_subtitles_by_videoid(video_ids[idx])
+                    logger.info(f'Empty data @ {video_ids[idx]} deleted')
                 else:
                     clean_data.append(element)
                     clean_targets.append(target[idx])
@@ -173,6 +176,9 @@ def test(model, args, epoch, dataset, logger, threshold):
                 for idx, element in enumerate(data):
                     if len(element) == 0:
                         logger.info(f'Empty data @ {video_ids[idx]}')
+                        my_db = db.SponsorDB(MY_DB_PATH,no_setup=True)
+                        my_db.delete_subtitles_by_videoid(video_ids[idx])
+                        logger.info(f'Empty data @ {video_ids[idx]} deleted')
                     else:
                         clean_data.append(element)
                         clean_targets.append(target[idx])
@@ -249,7 +255,7 @@ def main(args):
     test_dl = DataLoader(test_dataset, batch_size=args.test_bs, collate_fn=collate_fn, shuffle=False,
                          num_workers=args.num_workers)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     print(model)
     best_val_pk = 1.0
     for j in range(args.epochs):
@@ -280,5 +286,6 @@ if __name__ == '__main__':
     parser.add_argument('--num_layers', help='Number of layers per LSTM', type=int, default=2)
     parser.add_argument('--hidden_size', help='Size of hidden layers', type=int, default=256)
     parser.add_argument('--max_segment_number', help='Maximum number of segments in a video', type=int, default=300)
+    parser.add_argument('--lr', help='Learning Rate', type=float, default=1e-3)
 
     main(parser.parse_args())
