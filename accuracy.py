@@ -25,8 +25,8 @@ class Accuracy:
         if pk != -1:
             self.pk_to_weight.append((pk, count_pk))
         else:
-            print ('pk error')
-
+            #print ('pk error')
+            pass
         if windiff != -1:
             self.windiff_to_weight.append((windiff, count_wd))
 

@@ -11,6 +11,7 @@ from pathlib2 import Path
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from nltk.metrics import windowdiff,pk
 
 # from wiki_loader import WikipediaDataSet
 import accuracy
@@ -67,6 +68,20 @@ def softmax(x):
     sums = np.sum(exps, axis=1, keepdims=True)
     return exps / sums
 
+def convert_class_to_seg(output_seg):
+    output = []
+    for idx, out in enumerate(output_seg):
+        if idx == 0:
+            output.append(out)
+        elif idx == len(output_seg) - 1:
+            # 1 if last sentence is sponsor, 0 if not to differentiate between sponsor and beginning of next video in batch
+            output.append(out)
+        else:
+            if output_seg[idx - 1] != out:
+                output.append(1)
+            else:
+                output.append(0)
+    return output
 
 def train(model, args, epoch, dataset, logger, optimizer):
     model.train()
@@ -114,6 +129,8 @@ def validate(model, args, epoch, dataset, logger):
     with tqdm(desc='Validating', total=len(dataset)) as pbar:
         acc = Accuracies()
         total_loss=float(0)
+        total_out = []
+        total_targ = []
         for i, (data, target, video_ids) in enumerate(dataset):
             if True:
                 if i == args.stop_after:
@@ -142,6 +159,12 @@ def validate(model, args, epoch, dataset, logger):
 
                 acc.update(output_softmax.data.cpu().numpy(), clean_targets)
                 total_loss += loss.item()
+
+                if utils.config['type'] == 'classification':
+                    output_seg= convert_class_to_seg(output_seg)
+                    target_seg= convert_class_to_seg(target_seg)
+                total_out.extend(output_seg)
+                total_targ.extend(target_seg)
             # except Exception as e:
             #     # logger.info('Exception "%s" in batch %s', e, i)
             #     logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
@@ -149,6 +172,14 @@ def validate(model, args, epoch, dataset, logger):
 
         avg_loss = total_loss / len(dataset)
         epoch_pk, epoch_windiff, threshold = acc.calc_accuracy()
+        print(epoch_pk)
+        #if total_out.count(1)!=0:
+        epoch_windiff = windowdiff(total_targ,total_out,k=3,boundary=1)
+        epoch_pk = pk(total_targ,total_out,boundary=1)
+        #else:
+            #epoch_windiff = -1
+            #epoch_pk = -1
+
 
         logger.info('Validating Epoch: {}, accuracy: {:.4}, Pk: {:.4}, Windiff: {:.4}, F1: {:.6} ,Loss: {:.6}'.format(epoch + 1,
                                                                                                             preds_stats.get_accuracy(),
@@ -278,6 +309,7 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_dir', help='Checkpoint directory', default='checkpoints')
     parser.add_argument('--stop_after', help='Number of batches to stop after', default=None, type=int)
     parser.add_argument('--config', help='Path to config.json', default='config.json')
+    parser.add_argument('--type', help='Type of processessing. Either classification or segmentation', default='classification')
     # parser.add_argument('--wiki', help='Use wikipedia as dataset?', action='store_true')
     parser.add_argument('--num_workers', help='How many workers to use for data loading', type=int, default=0)
     #parser.add_argument('--infer', help='inference_dir', type=str)

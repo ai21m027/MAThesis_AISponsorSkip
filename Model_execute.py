@@ -130,6 +130,7 @@ def output_to_timestamps_downloaded(output, subtitles):
             text_list.append(subtitles[idx][1])
             text_list.append('----------------------------------------------------------------')
             segments_list.append((str(timedelta(seconds=start_time)), str(timedelta(seconds=end_time))))
+            in_segment =False
         if in_segment:
             text_list.append(subtitles[idx][1])
 
@@ -143,7 +144,7 @@ def main(args):
     test_video_id = args.videoid
     config_file = './config/config.json'
     utils.read_config_file(config_file)
-    model_path = r'checkpoints/model009.t7'
+    model_path = r'D:\Root_Philipp_Laptop\FH_AI\MA_Arbeit\Experiments\ModelSize_2nd_finished\256_2_1234\model009.t7'
     with open(model_path, 'rb') as f:
         model = torch.load(f)
     device = torch.device('cpu')
