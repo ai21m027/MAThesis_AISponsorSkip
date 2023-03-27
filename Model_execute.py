@@ -158,7 +158,8 @@ def main(args):
     else:
         subtitle_segments = download_data(test_video_id)
         #print(subtitle_segments)
-        eval_ds = SubtitlesDataset(DATABASE_PATH, word2vec, [test_video_id],mode='execute',excute_subtitles=subtitle_segments)
+        eval_ds = SubtitlesDataset(DATABASE_PATH, word2vec, [test_video_id], mode='execute',
+                                   execute_subtitles=subtitle_segments)
         eval_dl = DataLoader(eval_ds, batch_size=1, collate_fn=collate_fn, shuffle=False,
                              num_workers=0)
 

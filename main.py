@@ -194,14 +194,16 @@ def validate(model, args, epoch, dataset, logger):
 
 def test(model, args, epoch, dataset, logger, threshold):
     model.eval()
-    with tqdm(desc='Testing', total=len(dataset)) as pbar:
-        acc = accuracy.Accuracy()
+    with tqdm(desc='Validating', total=len(dataset)) as pbar:
+        acc = Accuracies()
+        total_loss=float(0)
+        total_out = []
+        total_targ = []
         for i, (data, target, video_ids) in enumerate(dataset):
             if True:
                 if i == args.stop_after:
                     break
-
-                #remove empty data, likely from preprocessing
+                # remove empty data, likely from preprocessing
                 clean_data = []
                 clean_targets = []
                 for idx, element in enumerate(data):
@@ -214,44 +216,48 @@ def test(model, args, epoch, dataset, logger, threshold):
                         clean_data.append(element)
                         clean_targets.append(target[idx])
                 pbar.update()
+
                 output = model(clean_data)
                 output_softmax = F.softmax(output, 1)
                 targets_var = Variable(maybe_cuda(torch.cat(clean_targets, 0), args.cuda), requires_grad=False)
+                loss = model.criterion(output, targets_var)
                 output_seg = output.data.cpu().numpy().argmax(axis=1)
                 target_seg = targets_var.data.cpu().numpy()
                 preds_stats.add(output_seg, target_seg)
 
-                current_idx = 0
+                acc.update(output_softmax.data.cpu().numpy(), clean_targets)
+                total_loss += loss.item()
 
-                for k, t in enumerate(clean_targets):
-                    document_sentence_count = len(t)
-                    to_idx = int(current_idx + document_sentence_count)
-
-                    output = ((output_softmax.data.cpu().numpy()[current_idx: to_idx, :])[:, 1] > threshold)
-                    h = np.append(output, [1])
-                    tt = np.append(t, [1])
-
-                    acc.update(h, tt)
-
-                    current_idx = to_idx
-
-                    # acc.update(output_softmax.data.cpu().numpy(), target)
-
-            #
+                if utils.config['type'] == 'classification':
+                    output_seg= convert_class_to_seg(output_seg)
+                    target_seg= convert_class_to_seg(target_seg)
+                total_out.extend(output_seg)
+                total_targ.extend(target_seg)
             # except Exception as e:
             #     # logger.info('Exception "%s" in batch %s', e, i)
             #     logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
+            #     pass
 
-        epoch_pk, epoch_windiff = acc.calc_accuracy()
+        avg_loss = total_loss / len(dataset)
+        epoch_pk, epoch_windiff, threshold = acc.calc_accuracy()
+        print(epoch_pk)
+        #if total_out.count(1)!=0:
+        epoch_windiff = windowdiff(total_targ,total_out,k=3,boundary=1)
+        epoch_pk = pk(total_targ,total_out,boundary=1)
+        #else:
+            #epoch_windiff = -1
+            #epoch_pk = -1
 
-        logger.debug('Testing Epoch: {}, accuracy: {:.4}, Pk: {:.4}, Windiff: {:.4}, F1: {:.4} . '.format(epoch + 1,
-                                                                                                          preds_stats.get_accuracy(),
-                                                                                                          epoch_pk,
-                                                                                                          epoch_windiff,
-                                                                                                          preds_stats.get_f1()))
+
+        logger.info('Validating Epoch: {}, accuracy: {:.4}, Pk: {:.4}, Windiff: {:.4}, F1: {:.6} ,Loss: {:.6}'.format(epoch + 1,
+                                                                                                            preds_stats.get_accuracy(),
+                                                                                                            epoch_pk,
+                                                                                                            epoch_windiff,
+                                                                                                            preds_stats.get_f1(),avg_loss))
+        logger.info(f'TN: {preds_stats.tn} FN: {preds_stats.fn} FP: {preds_stats.fp} TP {preds_stats.tp}')
         preds_stats.reset()
 
-        return epoch_pk
+        return epoch_pk, threshold
 
 
 def main(args):
@@ -294,7 +300,7 @@ def main(args):
         with (checkpoint_path / 'model{:03d}.t7'.format(j)).open('wb') as f:
             torch.save(model, f)
         val_pk, threshold = validate(model, args, j, dev_dl, logger)
-
+    test(model,args,j,test_dl,logger)
 
 if __name__ == '__main__':
     parser = ArgumentParser()

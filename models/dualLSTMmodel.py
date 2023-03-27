@@ -3,13 +3,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, PackedSequence
 
 from times_profiler import profiler
 from utils import maybe_cuda, setup_logger, unsort
 
-logger = setup_logger(__name__, 'train.log',no_screen=True)
-profilerLogger = setup_logger("profilerLogger", 'profiler.log', True,no_screen=True)
+logger = setup_logger(__name__, 'train.log', no_screen=True)
+profilerLogger = setup_logger("profilerLogger", 'profiler.log', True, no_screen=True)
 
 
 def zero_state(module, batch_size):
@@ -19,7 +19,13 @@ def zero_state(module, batch_size):
 
 
 class SentenceEncodingRNN(nn.Module):
-    def __init__(self, input_size=300, hidden=128, num_layers=2):
+    def __init__(self, input_size: int = 300, hidden: int = 128, num_layers: int = 2):
+        """
+        Initializes the Sentence Encoding LSTM network with the given parameters.
+        :param input_size: Size of the input tensor
+        :param hidden: Size of a single hidden layer
+        :param num_layers: number of layers in the network
+        """
         super(SentenceEncodingRNN, self).__init__()
         self.num_layers = num_layers
         self.hidden = hidden
@@ -31,7 +37,12 @@ class SentenceEncodingRNN(nn.Module):
                             dropout=0,
                             bidirectional=True)
 
-    def forward(self, x):
+    def forward(self, x: PackedSequence):
+        """
+        Forward method of the SentenceEncodingRNN
+        :param x: PackedSequence of sentences/segments
+        :return: reshaped output of the network
+        """
         batch_size = x.batch_sizes[0]
         s = zero_state(self, batch_size)
         _, (hidden, _) = self.lstm(x, s)  # (4, batch_size, 128)
@@ -42,7 +53,13 @@ class SentenceEncodingRNN(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, sentence_encoder, hidden=128, num_layers=2):
+    def __init__(self, sentence_encoder, hidden: int = 128, num_layers: int = 2):
+        """
+        Initializes the Sponsor Classifier Model with the given parameters
+        :param sentence_encoder: The Sentence Encoder to be used by the model
+        :param hidden: Size of a single hidden layer of the network
+        :param num_layers: Number of layers in the network
+        """
         super(Model, self).__init__()
 
         self.sentence_encoder = sentence_encoder
@@ -77,26 +94,19 @@ class Model(nn.Module):
         return padded.view(shape[2], 1, shape[3])  # (max_length, 1, 300)
 
     def forward(self, batch):
+        """
+        Forward method of the Sponsor Classifier Model
+        :param batch: batched subtitles of vectorized YouTube subtitles
+        :return: Tensor containing the results for each segment in each video as a tuple
+        """
         profiler.init()  # 0
 
         batch_size = len(batch)
-        nr_excluded_docs = 0
         sentences_per_doc = []
         all_batch_sentences = []
         for document in batch:
             all_batch_sentences.extend(document)
             sentences_per_doc.append(len(document))
-        """
-            # filter out empty documents
-            if len(document) != 0:
-                all_batch_sentences.extend(document)
-                sentences_per_doc.append(len(document))
-            else:
-                nr_excluded_docs += 1
-
-        # adjust batch_size for empty documents
-        batch_size = batch_size - nr_excluded_docs
-        """
 
         lengths = [s.size()[0] for s in all_batch_sentences]
         sort_order = np.argsort(lengths)[::-1]
@@ -104,7 +114,7 @@ class Model(nn.Module):
         sorted_lengths = [s.size()[0] for s in sorted_sentences]
 
         max_length = max(lengths)
-        logger.debug('Num sentences: %s, max sentence length: %s',sum(sentences_per_doc), max_length)
+        logger.debug('Num sentences: %s, max sentence length: %s', sum(sentences_per_doc), max_length)
 
         padded_sentences = [self.pad(s, max_length) for s in sorted_sentences]
         big_tensor = torch.cat(padded_sentences, 1)  # (max_length, batch size, 300)
@@ -148,7 +158,7 @@ class Model(nn.Module):
         return x
 
 
-def create(input_size=300,hidden_size=256,num_layers=2):
+def create(input_size=300, hidden_size=256, num_layers=2):
     sentence_encoder = SentenceEncodingRNN(input_size=input_size,
                                            hidden=hidden_size,
                                            num_layers=num_layers)
