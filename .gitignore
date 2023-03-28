@@ -217,3 +217,5 @@ word2vec
 *.log
 /test_data/test.db
 /batch_test.bat
+/results.csv
+/results_avg.csv
