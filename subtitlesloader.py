@@ -48,7 +48,7 @@ def collate_fn(batch):
 
 
 def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w2v_tensors: bool = True,
-                        type: str = 'classification') -> tuple[list, list, str]:
+                        target_type: str = 'classification') -> tuple[list, list, str]:
     """
     Cleans the text, provides the corresponding targets and videoid of a given YouTube video's subtitles
     :param entry: subtitle entry for the YouTube video
@@ -56,7 +56,7 @@ def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w
     :param word2vec: Word2Vec model for vectorizing the words of the subtitles
     :param train: Currently unused
     :param return_w2v_tensors: Boolean value to return the words in a vectorized form or not
-    :param type: either classification or segmentation, targets are processed either as 1 for inclass and 0 for notinclass
+    :param target_type: either classification or segmentation, targets are processed either as 1 for inclass and 0 for notinclass
                     or as 0 for no change in segment and 1 on segment change
     :return: tuple of a list of the subtitle text, a list of the targets and the videoid as a str
     """
@@ -75,9 +75,9 @@ def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w
             new_text.append([word_model(w, word2vec) for w in words])
         else:
             new_text.append(words)
-        if type == 'classification':
+        if target_type == 'classification':
             video_targets.append(entry[idx][2])
-        elif type == 'segmentation':
+        elif target_type == 'segmentation':
             if idx == 0:
                 video_targets.append(0)
             elif idx == len(segments) - 1:
@@ -95,7 +95,7 @@ def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w
 
 # Returns a list of batch_size that contains a list of sentences, where each word is encoded using word2vec.
 class SubtitlesDataset(Dataset):
-    def __init__(self, db_path: str, word2vec, videoidlist: list, train: bool = False, type: str = 'classification',
+    def __init__(self, db_path: str, word2vec, videoidlist: list, train: bool = False, target_type: str = 'classification',
                  subtitle_type: str = 'subtitles_db', execute_subtitles: list = None, max_segments: int = None):
         """
         Dataset class for the dataloader. Either uses provided subtitles
@@ -104,7 +104,7 @@ class SubtitlesDataset(Dataset):
         :param word2vec: word2vec model for vectorizing the words in the subtitles
         :param videoidlist: list of video ids to be loaded from the database
         :param train: currently unused
-        :param type: either classification or segmentation, targets are processed either as 1 for inclass and 0 for notinclass
+        :param target_type: either classification or segmentation, targets are processed either as 1 for inclass and 0 for notinclass
                     or as 0 for no change in segment and 1 on segment change
         :param subtitle_type: either subtitles_db, generated_subtitles_db or execute. Determines where the data is loaded from
                         On execute subtitles have to be provided via the ex
@@ -112,7 +112,7 @@ class SubtitlesDataset(Dataset):
         :param max_segments: Maximum number of segments in a video, too long videos will not be processed
         """
         self.videoidlist = []
-        self.type = type
+        self.target_type = target_type
 
         my_db = db.SponsorDB(db_path, no_setup=True)
         self.subtitles_list = []
@@ -145,7 +145,7 @@ class SubtitlesDataset(Dataset):
 
     def __getitem__(self, index):
         entry = self.subtitles_list[index]
-        return read_subtitle_entry(entry, index, self.word2vec, self.train, self.type)
+        return read_subtitle_entry(entry, index, self.word2vec, self.train, self.target_type)
 
     def __len__(self):
         return len(self.subtitles_list)
