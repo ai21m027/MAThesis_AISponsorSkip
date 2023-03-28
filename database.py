@@ -96,7 +96,7 @@ class SponsorDB():
         logging.debug('vidid_idx on subtitles ok')
 
     def _get_table_list(self):
-        q_save_table_names = """SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name"""
+        q_save_table_names = """SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"""
         self._cursor.execute(q_save_table_names)
         table_list_temp = self._cursor.fetchall()
         table_list = []
