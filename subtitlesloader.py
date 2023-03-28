@@ -66,8 +66,8 @@ def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w
     segment_count = 0
     new_text = []
     video_targets = []
-    for idx, sentence in enumerate(segments):
-        words = extract_sentence_words(sentence)
+    for idx, segment in enumerate(segments):
+        words = extract_sentence_words(segment)
         if len(words) == 0:
             continue
         segment_count += 1
@@ -81,7 +81,7 @@ def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w
             if idx == 0:
                 video_targets.append(0)
             elif idx == len(segments) - 1:
-                # 1 if last sentence is sponsor, 0 if not
+                # 1 if last segment is sponsor, 0 if not
                 # to differentiate between sponsor and beginning of next video in batch
                 video_targets.append(entry[idx][2])
             else:
@@ -96,7 +96,7 @@ def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w
 # Returns a list of batch_size that contains a list of sentences, where each word is encoded using word2vec.
 class SubtitlesDataset(Dataset):
     def __init__(self, db_path: str, word2vec, videoidlist: list, train: bool = False, type: str = 'classification',
-                 mode: str = 'subtitles_db', execute_subtitles: list = None, max_segments: int = None):
+                 subtitle_type: str = 'subtitles_db', execute_subtitles: list = None, max_segments: int = None):
         """
         Dataset class for the dataloader. Either uses provided subtitles
         or loads subtitles from the database from the provided list of video ids
@@ -106,7 +106,7 @@ class SubtitlesDataset(Dataset):
         :param train: currently unused
         :param type: either classification or segmentation, targets are processed either as 1 for inclass and 0 for notinclass
                     or as 0 for no change in segment and 1 on segment change
-        :param mode: either subtitles_db, generated_subtitles_db or execute. Determines where the data is loaded from
+        :param subtitle_type: either subtitles_db, generated_subtitles_db or execute. Determines where the data is loaded from
                         On execute subtitles have to be provided via the ex
         :param execute_subtitles: When using execute mode, provide subtitle segments as a list via this parameter
         :param max_segments: Maximum number of segments in a video, too long videos will not be processed
@@ -116,23 +116,25 @@ class SubtitlesDataset(Dataset):
 
         my_db = db.SponsorDB(db_path, no_setup=True)
         self.subtitles_list = []
-        if mode == 'subtitles_db':
-            for videoid in videoidlist:
+
+        for videoid in videoidlist:
+            if subtitle_type == 'subtitles_db':
                 subtitles = my_db.get_subtitles_by_videoid(videoid)
-                if max_segments is not None:
-                    if len(subtitles) <= max_segments:
-                        self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
-                        self.videoidlist.append(videoid)
-                else:
-                    self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
-                    self.videoidlist.append(videoid)
-        elif mode == 'generated_subtitles_db':
-            for videoid in videoidlist:
+            elif subtitle_type == 'generated_subtitles_db':
                 subtitles = my_db.get_generated_subtitles_by_videoid(videoid)
-                if len(subtitles) <= 300:
-                    self.subtitles_list.append(my_db.get_generated_subtitles_by_videoid(videoid))
+            elif subtitle_type == 'execute':
+                break
+            else:
+                raise ValueError(f'{subtitle_type} is not a valid subtitle type.')
+            if max_segments is not None:
+                if len(subtitles) <= max_segments:
+                    self.subtitles_list.append(subtitles)
                     self.videoidlist.append(videoid)
-        elif mode == 'execute':
+            else:
+                self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
+                self.videoidlist.append(videoid)
+
+        if subtitle_type == 'execute':
             if execute_subtitles is None:
                 exit('No excute_subtitles provided')
             self.subtitles_list.append(execute_subtitles)
@@ -154,9 +156,9 @@ if __name__ == '__main__':
     my_db = db.SponsorDB(MY_DB_PATH)
     unique_videos = my_db.get_unique_video_ids_from_subtitles()
     unique_videos = unique_videos[:10]
-    word2vec = gensim.models.KeyedVectors.load_word2vec_format("word2vec/GoogleNews-vectors-negative300.bin",
-                                                               binary=True)
-    test_DS = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos)
+    word2vec_temp = gensim.models.KeyedVectors.load_word2vec_format("word2vec/GoogleNews-vectors-negative300.bin",
+                                                                    binary=True)
+    test_DS = SubtitlesDataset(MY_DB_PATH, word2vec_temp, unique_videos)
     test_DL = DataLoader(test_DS, batch_size=8, shuffle=True, collate_fn=collate_fn)
     for text, targets, id in test_DS:
         print(targets)

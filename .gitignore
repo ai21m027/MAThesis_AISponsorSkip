@@ -215,3 +215,4 @@ data
 checkpoints
 word2vec
 *.log
+/test_data/test.db

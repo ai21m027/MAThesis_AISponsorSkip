@@ -34,6 +34,7 @@ class SponsorDB():
     def __init__(self, db_name: str,no_setup:bool=False):
         self._db_name = db_name
         self.init_database(no_setup)
+        self._get_table_list()
         logging.debug(f'Connection to {SponsorDB._db_name} opened')
 
     def __del__(self):
@@ -94,6 +95,14 @@ class SponsorDB():
         self._sqliteConnection.commit()
         logging.debug('vidid_idx on subtitles ok')
 
+    def _get_table_list(self):
+        q_save_table_names = """SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name"""
+        self._cursor.execute(q_save_table_names)
+        table_list_temp = self._cursor.fetchall()
+        table_list = []
+        for el in table_list_temp:
+            table_list.append(el[0])
+        self._table_list = table_list
 
     def store_sponsor_info(self, s_info: SponsorInfo):
         try:
@@ -228,8 +237,10 @@ class SponsorDB():
         self._cursor.execute(q_read_subtitles, (video_id,))
         return self._cursor.fetchone() is not None
 
-    def delete_subtitles_by_videoid(self, video_id: str):
-        q_delete_subtitles = '''DELETE FROM subtitles WHERE videoid = ? '''
+    def delete_subtitles_by_videoid(self, table: str, video_id: str):
+        if not table in self._table_list:
+            raise ValueError(f'{table} is not a valid table in the database')
+        q_delete_subtitles = '''DELETE FROM '''+table+''' WHERE videoid = ? '''
         self._cursor.execute(q_delete_subtitles, (video_id,))
         self._sqliteConnection.commit()
 
@@ -244,12 +255,18 @@ class SponsorDB():
         self._sqliteConnection.commit()
 
 if __name__ == '__main__':
-    my_sponsor_db = SponsorDB('data/SQLite_YTSP_subtitles.db')
+    my_sponsor_db = SponsorDB('test_data/test.db')
+    print(my_sponsor_db._table_list)
     my_spi = SponsorInfo(video_id='test123', start_time=62.4, end_time=4003.7, upvotes=23,
                          downvotes=7)
-    # my_sponsor_db.store_sponsor_info(my_spi)
+    #my_sponsor_db.store_sponsor_info(my_spi)
+    my_subt = SubtitleSegment(video_id='12345',text='test',is_sponsor=1,start_time=0.1,duration=1.1)
+    #my_sponsor_db.store_subtitle(my_subt)
+    my_sponsor_db.delete_subtitles_by_videoid(table='subtitles',video_id='12345')
     test = pd.DataFrame(my_sponsor_db.get_all_sponsor_info(),
                         columns=['uid', 'video_id', 'start_time', 'end_time', 'upvotes', 'downvotes'])
+    test2 = pd.DataFrame(my_sponsor_db.get_all_subtitle_info())
     test = test.sort_values('upvotes', ascending=False)
     test = test.reset_index(drop=True)
     print(test)
+    print(test2)

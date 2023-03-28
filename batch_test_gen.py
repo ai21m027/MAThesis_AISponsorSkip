@@ -8,21 +8,26 @@ if __name__ == '__main__':
     #model_layers = [1,2,4,6]
     model_layers = [2]
     #batch_sizes = [5,10]
-    lrs = [0.001,0.0001]
+    #lrs = [0.001,0.0001]
     seeds = [42,1337,1234,4321]
-    epochs = 20
-    datatype = []
-    learning_type = ['classification', 'segmentation']
-    datalength = 10000
-    os.remove(batch_file)
+    epochs = 10
+    datatype = ['manual','generated']
+    #learning_type = ['classification', 'segmentation']
+    #datalength = 10000
+    try:
+        os.remove(batch_file)
+    except:
+        pass
 
     for hidden in model_hiddens:
         for layer in model_layers:
-            for lr in lrs:
-                for seed in seeds:
+            for seed in seeds:
+                for type in datatype:
                     #name = f'{hidden}_{layer}_{lr}_{seed}'
-                    name = f'{lr}_{seed}'
+                    name = f'{type}_{seed}'
                     dir = os.path.join(r'C:\Users\Philipp\Desktop\MAThesis_GIT\MAThesis_AISponsorSkip\checkpoints',name)
-                    execute_string = f'python main.py --cuda --hidden_size {hidden} --num_layers {layer} --bs {10} --seed {seed} --checkpoint_dir {dir} --epochs {epochs} --datalen {datalength} --lr {lr}'
+                    execute_string = f'python main.py --cuda --hidden_size {hidden} --num_layers {layer} --bs {10} --seed {seed} --checkpoint_dir {dir} --epochs {epochs} --datalen {-1} --subtitletype {type}'
+                    if type == 'generated':
+                        execute_string+=f' --max_segment_number {500}'
                     with open(batch_file,mode='a') as f:
                         f.write(execute_string+'\n')

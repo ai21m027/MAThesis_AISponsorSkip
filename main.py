@@ -1,7 +1,8 @@
 import logging
 import os
 import random
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
+from logging import Logger
 
 import gensim
 import numpy as np
@@ -11,17 +12,13 @@ from pathlib2 import Path
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from nltk.metrics import windowdiff,pk
-
-# from wiki_loader import WikipediaDataSet
+from nltk.metrics import windowdiff, pk
 import accuracy
 import database as db
-import models.dualLSTMmodel as M
+import models.dualLSTMmodel as Dlstm
 import utils
 from subtitlesloader import SubtitlesDataset, collate_fn
 from utils import maybe_cuda
-
-# from termcolor import colored
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 preds_stats = utils.predictions_analysis()
@@ -68,13 +65,15 @@ def softmax(x):
     sums = np.sum(exps, axis=1, keepdims=True)
     return exps / sums
 
+
 def convert_class_to_seg(output_seg):
     output = []
     for idx, out in enumerate(output_seg):
         if idx == 0:
             output.append(out)
         elif idx == len(output_seg) - 1:
-            # 1 if last sentence is sponsor, 0 if not to differentiate between sponsor and beginning of next video in batch
+            # 1 if last sentence is sponsor, 0 if not
+            # to differentiate between sponsor and beginning of next video in batch
             output.append(out)
         else:
             if output_seg[idx - 1] != out:
@@ -83,21 +82,33 @@ def convert_class_to_seg(output_seg):
                 output.append(0)
     return output
 
-def train(model, args, epoch, dataset, logger, optimizer):
+
+def train(model: torch.nn.Module, args: Namespace, epoch: int, dl: DataLoader, logger: Logger,
+          optimizer: torch.optim.Optimizer) -> None:
+    """
+    Trains a ML model on the data provided by the dl Dataloader for one epoch
+    :param model: ML Model to be trained
+    :param args: general congfig args
+    :param epoch: current training epoch, used for logging
+    :param dl: Dataloader for training data
+    :param logger:
+    :param optimizer: ML Optimizer for training
+    """
     model.train()
     total_loss = float(0)
-    with tqdm(desc='Training', total=len(dataset)) as pbar:
-        for i, (data, target, video_ids) in enumerate(dataset):
+    with tqdm(desc='Training', total=len(dl)) as pbar:
+        for i, (data, target, video_ids) in enumerate(dl):
             if i == args.stop_after:
                 break
-            # remove empty data, likely from preprocessing
+            # remove empty data, from preprocessing
             clean_data = []
             clean_targets = []
-            for idx,element in enumerate(data):
+            for idx, element in enumerate(data):
                 if len(element) == 0:
                     logger.info(f'Empty data @ {video_ids[idx]}')
                     my_db = db.SponsorDB(MY_DB_PATH, no_setup=True)
-                    my_db.delete_subtitles_by_videoid(video_ids[idx])
+                    table = 'subtitles' if utils.config['subtitletype'] == 'manual' else 'generated_subtitles'
+                    my_db.delete_subtitles_by_videoid(table, video_ids[idx])
                     logger.info(f'Empty data @ {video_ids[idx]} deleted')
                 else:
                     clean_data.append(element)
@@ -105,33 +116,38 @@ def train(model, args, epoch, dataset, logger, optimizer):
             pbar.update()
             model.zero_grad()
             output = model(clean_data)
-            #output_softmax = F.softmax(output, 1)
+            # unused because does not work for training
+            # output_softmax = F.softmax(output, 1)
             target_var = Variable(maybe_cuda(torch.cat(clean_targets, 0), args.cuda), requires_grad=False)
             loss = model.criterion(output, target_var)
             loss.backward()
 
             optimizer.step()
             total_loss += loss.item()
-            # logger.debug('Batch %s - Train error %7.4f', i, loss.data[0])
             pbar.set_description('Training, loss={:.4}'.format(loss.item()))
-            # except Exception as e:
-            # logger.info('Exception "%s" in batch %s', e, i)
-            # logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
-            # pass
 
-    avg_loss = total_loss / len(dataset)
+    avg_loss = total_loss / len(dl)
     logger.info('Training Epoch: {}, Loss: {:.6}.'.format(epoch + 1, avg_loss))
-    # log_value('Training Loss', avg_loss, epoch + 1)
 
 
-def validate(model, args, epoch, dataset, logger):
+def validate(model: torch.nn.Module, args: Namespace, epoch: int, dl: DataLoader, logger: Logger) -> (
+        float, float):
+    """
+    Validates a ML model on the given dataloader
+    :param model: The ML model to be validated
+    :param args: config args from the commandline
+    :param epoch: last finished epoch before evaluation
+    :param dl: Dataloader for validation data
+    :param logger: Logger instance
+    :return: pk value of validation, windiff value of validation
+    """
     model.eval()
-    with tqdm(desc='Validating', total=len(dataset)) as pbar:
+    with tqdm(desc='Validating', total=len(dl)) as pbar:
         acc = Accuracies()
-        total_loss=float(0)
+        total_loss = float(0)
         total_out = []
         total_targ = []
-        for i, (data, target, video_ids) in enumerate(dataset):
+        for i, (data, target, video_ids) in enumerate(dl):
             if True:
                 if i == args.stop_after:
                     break
@@ -141,8 +157,9 @@ def validate(model, args, epoch, dataset, logger):
                 for idx, element in enumerate(data):
                     if len(element) == 0:
                         logger.info(f'Empty data @ {video_ids[idx]}')
-                        my_db = db.SponsorDB(MY_DB_PATH,no_setup=True)
-                        my_db.delete_subtitles_by_videoid(video_ids[idx])
+                        my_db = db.SponsorDB(MY_DB_PATH, no_setup=True)
+                        table = 'subtitles' if utils.config['subtitletype'] == 'manual' else 'generated_subtitles'
+                        my_db.delete_subtitles_by_videoid(table, video_ids[idx])
                         logger.info(f'Empty data @ {video_ids[idx]} deleted')
                     else:
                         clean_data.append(element)
@@ -161,45 +178,41 @@ def validate(model, args, epoch, dataset, logger):
                 total_loss += loss.item()
 
                 if utils.config['type'] == 'classification':
-                    output_seg= convert_class_to_seg(output_seg)
-                    target_seg= convert_class_to_seg(target_seg)
+                    output_seg = convert_class_to_seg(output_seg)
+                    target_seg = convert_class_to_seg(target_seg)
                 total_out.extend(output_seg)
                 total_targ.extend(target_seg)
-            # except Exception as e:
-            #     # logger.info('Exception "%s" in batch %s', e, i)
-            #     logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
-            #     pass
 
-        avg_loss = total_loss / len(dataset)
-        epoch_pk, epoch_windiff, threshold = acc.calc_accuracy()
-        print(epoch_pk)
-        #if total_out.count(1)!=0:
-        epoch_windiff = windowdiff(total_targ,total_out,k=3,boundary=1)
-        epoch_pk = pk(total_targ,total_out,boundary=1)
-        #else:
-            #epoch_windiff = -1
-            #epoch_pk = -1
-
-
-        logger.info('Validating Epoch: {}, accuracy: {:.4}, Pk: {:.4}, Windiff: {:.4}, F1: {:.6} ,Loss: {:.6}'.format(epoch + 1,
-                                                                                                            preds_stats.get_accuracy(),
-                                                                                                            epoch_pk,
-                                                                                                            epoch_windiff,
-                                                                                                            preds_stats.get_f1(),avg_loss))
+        avg_loss = total_loss / len(dl)
+        epoch_windiff = windowdiff(total_targ, total_out, k=3, boundary=1)
+        epoch_pk = pk(total_targ, total_out, boundary=1)
+        logger.info(
+            f'Validating Epoch: {epoch + 1}, accuracy: {preds_stats.get_accuracy():.4}, Pk: {epoch_pk:.4},' +
+            f'Windiff: {epoch_windiff:.4}, F1: {preds_stats.get_f1():.6} ,Loss: {avg_loss:.6}')
         logger.info(f'TN: {preds_stats.tn} FN: {preds_stats.fn} FP: {preds_stats.fp} TP {preds_stats.tp}')
         preds_stats.reset()
 
-        return epoch_pk, threshold
+        return epoch_pk, epoch_windiff
 
 
-def test(model, args, epoch, dataset, logger, threshold):
+def test(model: torch.nn.Module, args: Namespace, epoch: int, dl: DataLoader, logger: Logger) -> (
+        float, float):
+    """
+    Tests a ML model on the given dataloader
+    :param model: The ML model to be validated
+    :param args: config args from the commandline
+    :param epoch: last finished epoch before evaluation
+    :param dl: Dataloader for validation data
+    :param logger: Logger instance
+    :return: pk value of validation, windiff value of validation
+    """
     model.eval()
-    with tqdm(desc='Validating', total=len(dataset)) as pbar:
+    with tqdm(desc='Validating', total=len(dl)) as pbar:
         acc = Accuracies()
-        total_loss=float(0)
+        total_loss = float(0)
         total_out = []
         total_targ = []
-        for i, (data, target, video_ids) in enumerate(dataset):
+        for i, (data, target, video_ids) in enumerate(dl):
             if True:
                 if i == args.stop_after:
                     break
@@ -209,8 +222,9 @@ def test(model, args, epoch, dataset, logger, threshold):
                 for idx, element in enumerate(data):
                     if len(element) == 0:
                         logger.info(f'Empty data @ {video_ids[idx]}')
-                        my_db = db.SponsorDB(MY_DB_PATH,no_setup=True)
-                        my_db.delete_subtitles_by_videoid(video_ids[idx])
+                        my_db = db.SponsorDB(MY_DB_PATH, no_setup=True)
+                        table = 'subtitles' if utils.config['subtitletype'] == 'manual' else 'generated_subtitles'
+                        my_db.delete_subtitles_by_videoid(table, video_ids[idx])
                         logger.info(f'Empty data @ {video_ids[idx]} deleted')
                     else:
                         clean_data.append(element)
@@ -229,38 +243,28 @@ def test(model, args, epoch, dataset, logger, threshold):
                 total_loss += loss.item()
 
                 if utils.config['type'] == 'classification':
-                    output_seg= convert_class_to_seg(output_seg)
-                    target_seg= convert_class_to_seg(target_seg)
+                    output_seg = convert_class_to_seg(output_seg)
+                    target_seg = convert_class_to_seg(target_seg)
                 total_out.extend(output_seg)
                 total_targ.extend(target_seg)
-            # except Exception as e:
-            #     # logger.info('Exception "%s" in batch %s', e, i)
-            #     logger.debug('Exception while handling batch with file paths: %s', paths, exc_info=True)
-            #     pass
 
-        avg_loss = total_loss / len(dataset)
-        epoch_pk, epoch_windiff, threshold = acc.calc_accuracy()
-        print(epoch_pk)
-        #if total_out.count(1)!=0:
-        epoch_windiff = windowdiff(total_targ,total_out,k=3,boundary=1)
-        epoch_pk = pk(total_targ,total_out,boundary=1)
-        #else:
-            #epoch_windiff = -1
-            #epoch_pk = -1
-
-
-        logger.info('Validating Epoch: {}, accuracy: {:.4}, Pk: {:.4}, Windiff: {:.4}, F1: {:.6} ,Loss: {:.6}'.format(epoch + 1,
-                                                                                                            preds_stats.get_accuracy(),
-                                                                                                            epoch_pk,
-                                                                                                            epoch_windiff,
-                                                                                                            preds_stats.get_f1(),avg_loss))
+        avg_loss = total_loss / len(dl)
+        epoch_windiff = windowdiff(total_targ, total_out, k=3, boundary=1)
+        epoch_pk = pk(total_targ, total_out, boundary=1)
+        logger.info(
+            f'Validating Epoch: {epoch + 1}, accuracy: {preds_stats.get_accuracy():.4}, Pk: {epoch_pk:.4},' +
+            f'Windiff: {epoch_windiff:.4}, F1: {preds_stats.get_f1():.6} ,Loss: {avg_loss:.6}')
         logger.info(f'TN: {preds_stats.tn} FN: {preds_stats.fn} FP: {preds_stats.fp} TP {preds_stats.tp}')
         preds_stats.reset()
 
-        return epoch_pk, threshold
+        return epoch_pk, epoch_windiff
 
 
-def main(args):
+def main(args: Namespace) -> None:
+    """
+    :param args:
+    :return:
+    """
     config_file = './config/config.json'
     checkpoint_dir = args.checkpoint_dir
     checkpoint_path = Path(checkpoint_dir)
@@ -270,20 +274,35 @@ def main(args):
     utils.read_config_file(config_file)
     utils.config.update(args.__dict__)
     logger.debug('Running with config %s', utils.config)
-    model = M.create(hidden_size=args.hidden_size,num_layers=args.num_layers)
-    model = maybe_cuda(model)
+    if args.load_from is None:
+        model = Dlstm.create(hidden_size=args.hidden_size, num_layers=args.num_layers)
+        model = maybe_cuda(model)
+    else:
+        with open(args.load_from, 'rb') as f:
+            model = torch.load(f)
+        model = maybe_cuda(model)
 
     my_db = db.SponsorDB(MY_DB_PATH)
-    unique_videos = my_db.get_unique_video_ids_from_subtitles()
+    if args.subtitle_type == 'manual':
+        unique_videos = my_db.get_unique_video_ids_from_subtitles()
+    elif args.subtitle_type == 'generated':
+        unique_videos = my_db.get_unique_video_ids_from_generated_subtitles()
+    else:
+        raise ValueError(f'{args.subtitle_type} is not a recognized subtitle type. Try manual or generated')
     random.Random(args.seed).shuffle(unique_videos)
     unique_videos = unique_videos[:args.datalen]
 
     word2vec = gensim.models.KeyedVectors.load_word2vec_format(utils.config['word2vecfile'], binary=True)
 
-    train_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[:int(len(unique_videos) * 0.8)],max_segments=args.max_segment_number)
+    subtitle_type = 'subtitles_db' if args.subtitletype == 'manual' else 'generated_subtitles_db'
+
+    train_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[:int(len(unique_videos) * 0.8)],
+                                     max_segments=args.max_segment_number, subtitle_type=subtitle_type)
     dev_dataset = SubtitlesDataset(MY_DB_PATH, word2vec,
-                                   unique_videos[int(len(unique_videos) * 0.8):int(len(unique_videos) * 0.9)],max_segments=args.max_segment_number)
-    test_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[int(len(unique_videos) * 0.9):],max_segments=args.max_segment_number)
+                                   unique_videos[int(len(unique_videos) * 0.8):int(len(unique_videos) * 0.9)],
+                                   max_segments=args.max_segment_number, subtitle_type=subtitle_type)
+    test_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[int(len(unique_videos) * 0.9):],
+                                    max_segments=args.max_segment_number, subtitle_type=subtitle_type)
 
     train_dl = DataLoader(train_dataset, batch_size=args.bs, collate_fn=collate_fn, shuffle=False,
                           num_workers=args.num_workers)
@@ -294,31 +313,31 @@ def main(args):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     print(model)
-    best_val_pk = 1.0
     for j in range(args.epochs):
         train(model, args, j, train_dl, logger, optimizer)
         with (checkpoint_path / 'model{:03d}.t7'.format(j)).open('wb') as f:
             torch.save(model, f)
-        val_pk, threshold = validate(model, args, j, dev_dl, logger)
-    test(model,args,j,test_dl,logger)
+        validate(model, args, j, dev_dl, logger)
+    test(model, args, utils.config['epochs'], test_dl, logger)
+
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--cuda', help='Use cuda?', action='store_true')
-    #parser.add_argument('--test', help='Test mode? (e.g fake word2vec)', action='store_true')
     parser.add_argument('--bs', help='Batch size', type=int, default=8)
     parser.add_argument('--test_bs', help='Batch size', type=int, default=5)
     parser.add_argument('--epochs', help='Number of epochs to run', type=int, default=10)
-    # parser.add_argument('--model', help='Model to run - will import and run')
-    parser.add_argument('--load_from', help='Location of a .t7 model file to load. Training will continue')
+    parser.add_argument('--load_from', help='Location of a .t7 model file to load. Training will continue',
+                        default=None)
     parser.add_argument('--expname', help='Experiment name to appear on tensorboard', default='exp1')
     parser.add_argument('--checkpoint_dir', help='Checkpoint directory', default='checkpoints')
     parser.add_argument('--stop_after', help='Number of batches to stop after', default=None, type=int)
     parser.add_argument('--config', help='Path to config.json', default='config.json')
-    parser.add_argument('--type', help='Type of processessing. Either classification or segmentation', default='classification')
-    # parser.add_argument('--wiki', help='Use wikipedia as dataset?', action='store_true')
+    parser.add_argument('--type', help='Type of processing. Either classification or segmentation',
+                        default='classification')
+    parser.add_argument('--subtitletype', help='Type of subtitle to be processed. Either manual or generated',
+                        default='manual')
     parser.add_argument('--num_workers', help='How many workers to use for data loading', type=int, default=0)
-    #parser.add_argument('--infer', help='inference_dir', type=str)
     parser.add_argument('--seed', help='Seed for training selection', type=int, default=42)
     parser.add_argument('--datalen', help='Length of training data to use', type=int, default=-1)
     parser.add_argument('--num_layers', help='Number of layers per LSTM', type=int, default=2)
