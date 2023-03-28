@@ -283,9 +283,9 @@ def main(args: Namespace) -> None:
         model = maybe_cuda(model)
 
     my_db = db.SponsorDB(MY_DB_PATH)
-    if args.subtitle_type == 'manual':
+    if args.subtitletype == 'manual':
         unique_videos = my_db.get_unique_video_ids_from_subtitles()
-    elif args.subtitle_type == 'generated':
+    elif args.subtitletype == 'generated':
         unique_videos = my_db.get_unique_video_ids_from_generated_subtitles()
     else:
         raise ValueError(f'{args.subtitle_type} is not a recognized subtitle type. Try manual or generated')
