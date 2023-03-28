@@ -47,8 +47,7 @@ def collate_fn(batch):
     return batched_data, batched_targets, paths
 
 
-def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w2v_tensors: bool = True,
-                        target_type: str = 'classification') -> tuple[list, list, str]:
+def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w2v_tensors: bool = True, target_type: str = 'classification'):
     """
     Cleans the text, provides the corresponding targets and videoid of a given YouTube video's subtitles
     :param entry: subtitle entry for the YouTube video
