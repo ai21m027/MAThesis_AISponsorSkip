@@ -225,7 +225,8 @@ class SponsorDB():
     def get_unique_video_ids_from_generated_subtitles(self) -> list:
         q_read_subtitles = '''SELECT DISTINCT videoid FROM generated_subtitles'''
         self._cursor.execute(q_read_subtitles)
-        return self._cursor.fetchall()
+        id_list = [element[0] for element in self._cursor.fetchall()]
+        return id_list
 
     def check_video_exists_in_generated_subtitles(self, video_id: str) -> bool:
         q_read_generated_subtitles = '''SELECT 1 FROM generated_subtitles WHERE videoid =? LIMIT 1'''
