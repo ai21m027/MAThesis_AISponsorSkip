@@ -11,7 +11,7 @@ if __name__ == '__main__':
     #lrs = [0.001,0.0001]
     seeds = [42,1337,1234,4321]
     epochs = 10
-    datatype = ['manual','generated']
+    datatype = ['generated','manual']
     #learning_type = ['classification', 'segmentation']
     #datalength = 10000
     try:
