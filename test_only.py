@@ -217,7 +217,7 @@ def main(args: Namespace):
                                     max_segments=experiment_parameters.max_segment_number, subtitle_type=subtitle_type,
                                     target_type=experiment_parameters.type)
 
-    test_dl = DataLoader(test_dataset, batch_size=args.test_bs, collate_fn=collate_fn, shuffle=False,
+    test_dl = DataLoader(test_dataset, batch_size=5, collate_fn=collate_fn, shuffle=False,
                          num_workers=args.num_workers)
 
     print(model)
