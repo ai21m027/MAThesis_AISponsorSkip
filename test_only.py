@@ -30,7 +30,9 @@ class Experiment_parameters(NamedTuple):
     subtitle_type: str
     seed: int
     lr: float
-
+    datalen:int
+    type: str
+    max_segment_number:int
 
 class Accuracies(object):
     def __init__(self):
@@ -160,14 +162,20 @@ def get_params_from_log(log_path: str) -> Experiment_parameters:
         lines = f.readlines()
     lr = float(re.search("'lr': (\d.\d+)", lines[0]).group(1))
     seed = int(re.search("'seed': (\d+)", lines[0]).group(1))
-    subtitle_type = re.search("'subtitletype': '(\w+)'", lines[0]).group(1)
+    subtitle_type = re.search("'subtitletype': '(\w+)'", lines[0]).group(1) if re.search("'subtitletype': '(\w+)'", lines[0]) is not None else 'manual'
     hidden = int(re.search("'hidden_size': (\d+)", lines[0]).group(1))
     num_layers = int(re.search("'num_layers': (\d+)", lines[0]).group(1))
+    datalen = int(re.search("'datalen': (\d+)", lines[0]).group(1))
+    max_segment_number = int(re.search("'max_segment_number': (\d+)", lines[0]).group(1))
+    type = re.search("'type': '(\w+)'", lines[0]).group(1) if re.search("'subtitletype': '(\w+)'", lines[0]) is not None else 'classification'
     new_params = Experiment_parameters(hidden=hidden,
                                        layers=num_layers,
                                        subtitle_type=subtitle_type,
                                        seed=seed,
-                                       lr=lr)
+                                       lr=lr,
+                                       datalen=datalen,
+                                       max_segment_number=max_segment_number,
+                                       type = type)
     return new_params
 
 
@@ -204,8 +212,8 @@ def main(args: Namespace):
     subtitle_type = 'subtitles_db' if experiment_parameters.subtitle_type == 'manual' else 'generated_subtitles_db'
 
     test_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[int(len(unique_videos) * 0.9):],
-                                    max_segments=args.max_segment_number, subtitle_type=subtitle_type,
-                                    target_type=args.type)
+                                    max_segments=experiment_parameters.max_segment_number, subtitle_type=subtitle_type,
+                                    target_type=experiment_parameters.type)
 
     test_dl = DataLoader(test_dataset, batch_size=args.test_bs, collate_fn=collate_fn, shuffle=False,
                          num_workers=args.num_workers)
