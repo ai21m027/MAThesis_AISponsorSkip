@@ -197,7 +197,7 @@ def main(args: Namespace):
     with open(args.load_from, 'rb') as f:
         model = torch.load(f)
     model = maybe_cuda(model)
-    devicetorch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     my_db = db.SponsorDB(MY_DB_PATH)
