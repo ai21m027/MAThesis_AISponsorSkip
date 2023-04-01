@@ -230,5 +230,6 @@ if __name__ == '__main__':
     parser.add_argument('--cuda', help='Use cuda?', action='store_true')
     parser.add_argument('--load_from', help='Location of a .t7 model file to load for testing')
     parser.add_argument('--log', help='Location of a log file containing parameters')
+    parser.add_argument('--stop_after', help='Number of batches to stop after', default=None, type=int)
 
     main(parser.parse_args())
