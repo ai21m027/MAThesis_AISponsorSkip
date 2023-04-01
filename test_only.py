@@ -182,7 +182,7 @@ def get_params_from_log(log_path: str) -> Experiment_parameters:
 def main(args: Namespace):
     experiment_parameters = get_params_from_log(args.log)
     config_file = './config/config.json'
-    checkpoint_dir = os.path.split(args.load_from)
+    checkpoint_dir = os.path.split(args.load_from)[0]
     checkpoint_path = Path(checkpoint_dir)
     checkpoint_path.mkdir(exist_ok=True)
 
