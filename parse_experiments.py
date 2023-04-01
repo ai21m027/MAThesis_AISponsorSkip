@@ -3,11 +3,12 @@ import pandas as pd
 from typing import NamedTuple
 import re
 import numpy as np
-
+import os
 class Experiment(NamedTuple):
     epoch: int
     hidden: int
     layers: int
+    subtitle_type: str
     seed: int
     lr: float
     accuracy: float
@@ -24,16 +25,20 @@ def parse_log(path: str,dir:str) -> Experiment:
     params = dir.split('_')
     #hidden_size = int(params[0])
     #layers = int(params[1])
-    lr = float(params[0])
-    seed = int(params[1])
     with open(path, 'r') as f:
         lines = f.readlines()
     found = False
+    lr = float(re.search("'lr': (\d.\d+)",lines[0]).group(1))
+    seed = int(re.search("'seed': (\d+)",lines[0]).group(1))
+    subtitle_type = re.search("'subtitletype': '(\w+)'",lines[0]).group(1)
+    epoch = int(re.search("'epochs': (\d+)",lines[0]).group(1))
+    hidden = int(re.search("'hidden_size': (\d+)",lines[0]).group(1))
+    num_layers = int(re.search("'num_layers': (\d+)",lines[0]).group(1))
     for idx,line in enumerate(lines):
         if re.search(r'Validating Epoch', line):
             accuracy = float(re.search(r'accuracy: (\d+\.\d+),', line).group(1))
             pk = float(re.search(r'Pk: (\d+\.\d+),', line).group(1))
-            windiff = float(re.search(r'Windiff: (-\d+\.\d+),', line).group(1))
+            windiff = float(re.search(r'Windiff: (\d+\.\d+),', line).group(1))
             f1 = float(re.search(r'F1: (\d+\.\d+) ,', line).group(1))
             loss = float(re.search(r'Loss: (\d+\.\d+)', line).group(1))
             found = True
@@ -45,9 +50,10 @@ def parse_log(path: str,dir:str) -> Experiment:
 
     if found:
         #print(accuracy, pk, windiff, f1, loss)
-        result = Experiment(epoch=20,
-                            hidden=256,
-                            layers=2,
+        result = Experiment(epoch=epoch,
+                            hidden=hidden,
+                            layers=num_layers,
+                            subtitle_type = subtitle_type,
                             seed=seed,
                             lr=lr,
                             accuracy=accuracy,
@@ -64,16 +70,15 @@ def parse_log(path: str,dir:str) -> Experiment:
         return None
 
 if __name__ == '__main__':
-    experiment_base_dir = 'checkpoints'
+    experiment_base_dir = r'C:\temp'
     pd.set_option('display.max_columns',None)
     experiments = []
     for root, dirs, files in walk(experiment_base_dir):
-        for dir in dirs:
-            for file in files:
-                if file.endswith('train.log'):
-                    #print(dir,file)
-
-                    experiments.append(parse_log(f'{experiment_base_dir}/{dir}/{file}',dir))
+        for file in files:
+            if file.endswith('train.log'):
+                #print(dir,file)
+                test = root
+                experiments.append(parse_log(f'{root}\\{file}',root.split('\\')[-1]))
 
     experiments_df = pd.DataFrame(experiments)
     #experiments_df.columns = ['epoch','hidden','layers','seed','Acc','Pk','Windiff','F1','Loss','TN','FN','FP','TP']
@@ -81,26 +86,3 @@ if __name__ == '__main__':
     print(experiments_df)
     #print(experiments_df.describe())
     experiments_df.to_csv('results.csv',sep=';',decimal= ",")
-    model_hiddens = [64, 128, 256, 512]
-    model_layers = [1, 2, 4, 6]
-    lrs = [0.1,0.01,0.001,0.0001]
-    experiments_dict ={}
-    for lr in lrs:
-        name = f'{lr}'
-
-        for experiment in experiments:
-            if experiment is not None:
-                if experiment.lr == lr:
-                    if name not in experiments_dict:
-                        experiments_dict[name] = []
-                    experiments_dict[name].append(np.array(list(experiment)))
-        if name in experiments_dict:
-            new_list =np.mean(experiments_dict[name],axis=0)
-            experiments_dict[name] = new_list
-
-    avg_data = pd.DataFrame(experiments_dict)
-    avg_data = avg_data.T
-    #avg_data.columns = ['epoch','hidden','layers','seed','Acc','Pk','Windiff','F1','Loss','TN','FN','FP','TP']
-    avg_data.columns = experiments_df.columns
-    print(avg_data)
-    avg_data.to_csv('results_avg.csv',sep=';',decimal= ",")

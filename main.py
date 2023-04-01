@@ -297,12 +297,15 @@ def main(args: Namespace) -> None:
     subtitle_type = 'subtitles_db' if args.subtitletype == 'manual' else 'generated_subtitles_db'
 
     train_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[:int(len(unique_videos) * 0.8)],
-                                     max_segments=args.max_segment_number, subtitle_type=subtitle_type)
+                                     max_segments=args.max_segment_number, subtitle_type=subtitle_type,
+                                     target_type=args.type)
     dev_dataset = SubtitlesDataset(MY_DB_PATH, word2vec,
                                    unique_videos[int(len(unique_videos) * 0.8):int(len(unique_videos) * 0.9)],
-                                   max_segments=args.max_segment_number, subtitle_type=subtitle_type)
+                                   max_segments=args.max_segment_number, subtitle_type=subtitle_type,
+                                   target_type=args.type)
     test_dataset = SubtitlesDataset(MY_DB_PATH, word2vec, unique_videos[int(len(unique_videos) * 0.9):],
-                                    max_segments=args.max_segment_number, subtitle_type=subtitle_type)
+                                    max_segments=args.max_segment_number, subtitle_type=subtitle_type,
+                                    target_type=args.type)
 
     train_dl = DataLoader(train_dataset, batch_size=args.bs, collate_fn=collate_fn, shuffle=False,
                           num_workers=args.num_workers)
