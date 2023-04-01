@@ -165,7 +165,7 @@ def get_params_from_log(log_path: str) -> Experiment_parameters:
     subtitle_type = re.search("'subtitletype': '(\w+)'", lines[0]).group(1) if re.search("'subtitletype': '(\w+)'", lines[0]) is not None else 'manual'
     hidden = int(re.search("'hidden_size': (\d+)", lines[0]).group(1))
     num_layers = int(re.search("'num_layers': (\d+)", lines[0]).group(1))
-    datalen = int(re.search("'datalen': (\d+)", lines[0]).group(1))
+    datalen = int(re.search("'datalen': (-?\d+)", lines[0]).group(1))
     max_segment_number = int(re.search("'max_segment_number': (\d+)", lines[0]).group(1))
     type = re.search("'type': '(\w+)'", lines[0]).group(1) if re.search("'subtitletype': '(\w+)'", lines[0]) is not None else 'classification'
     new_params = Experiment_parameters(hidden=hidden,
@@ -195,10 +195,13 @@ def main(args: Namespace):
     logger.debug('Running with config %s', utils.config)
 
     with open(args.load_from, 'rb') as f:
-        model = torch.load(f)
+        if not args.cuda:
+            model = torch.load(f,map_location=torch.device('cpu'))
+        else:
+            model = torch.load(f, map_location=torch.device('cuda'))
     model = maybe_cuda(model)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #model.to(device)
 
     my_db = db.SponsorDB(MY_DB_PATH)
     if experiment_parameters.subtitle_type == 'manual':
