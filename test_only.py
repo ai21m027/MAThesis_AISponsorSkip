@@ -197,6 +197,8 @@ def main(args: Namespace):
     with open(args.load_from, 'rb') as f:
         model = torch.load(f)
     model = maybe_cuda(model)
+    device = torch.device('cpu')
+    model.to(device)
 
     my_db = db.SponsorDB(MY_DB_PATH)
     if experiment_parameters.subtitle_type == 'manual':
