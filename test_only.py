@@ -189,7 +189,9 @@ def main(args: Namespace):
     logger = utils.setup_logger(__name__, os.path.join(checkpoint_dir, 'eval.log'), level=logging.DEBUG)
 
     utils.read_config_file(config_file)
-    utils.config.update(experiment_parameters.__dict__)
+    #utils.config.update(experiment_parameters.__dict__)
+    utils.config['type'] = experiment_parameters.type
+    utils.config['subtitletype'] = experiment_parameters.subtitle_type
     logger.debug('Running with config %s', utils.config)
 
     with open(args.load_from, 'rb') as f:
