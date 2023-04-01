@@ -218,7 +218,7 @@ def main(args: Namespace):
                                     target_type=experiment_parameters.type)
 
     test_dl = DataLoader(test_dataset, batch_size=5, collate_fn=collate_fn, shuffle=False,
-                         num_workers=args.num_workers)
+                         num_workers=0)
 
     print(model)
 
