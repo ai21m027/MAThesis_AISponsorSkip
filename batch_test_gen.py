@@ -12,8 +12,8 @@ if __name__ == '__main__':
     seeds = [42,1337,1234,4321]
     epochs = 10
     datatype = ['generated','manual']
-    #learning_type = ['classification', 'segmentation']
-    #datalength = 10000
+    learning_type = ['segmentation','classification']
+    datalength = 10000
     try:
         os.remove(batch_file)
     except:
@@ -22,12 +22,10 @@ if __name__ == '__main__':
     for hidden in model_hiddens:
         for layer in model_layers:
             for seed in seeds:
-                for type in datatype:
+                for ltype in learning_type:
                     #name = f'{hidden}_{layer}_{lr}_{seed}'
-                    name = f'{type}_{seed}'
+                    name = f'{ltype}_{seed}'
                     dir = os.path.join(r'C:\Users\Philipp\Desktop\MAThesis_GIT\MAThesis_AISponsorSkip\checkpoints',name)
-                    execute_string = f'python main.py --cuda --hidden_size {hidden} --num_layers {layer} --bs {10} --seed {seed} --checkpoint_dir {dir} --epochs {epochs} --datalen {-1} --subtitletype {type}'
-                    if type == 'generated':
-                        execute_string+=f' --max_segment_number {500}'
+                    execute_string = f'python main.py --cuda --hidden_size {hidden} --num_layers {layer} --bs {10} --seed {seed} --checkpoint_dir {dir} --epochs {epochs} --datalen {datalength} --type {ltype}'
                     with open(batch_file,mode='a') as f:
                         f.write(execute_string+'\n')
