@@ -167,7 +167,7 @@ def get_params_from_log(log_path: str) -> Experiment_parameters:
     num_layers = int(re.search("'num_layers': (\d+)", lines[0]).group(1))
     datalen = int(re.search("'datalen': (-?\d+)", lines[0]).group(1))
     max_segment_number = int(re.search("'max_segment_number': (\d+)", lines[0]).group(1))
-    type = re.search("'type': '(\w+)'", lines[0]).group(1) if re.search("'subtitletype': '(\w+)'", lines[0]) is not None else 'classification'
+    type = re.search("'type': '(\w+)'", lines[0]).group(1) if re.search("'type': '(\w+)'", lines[0]) is not None else 'classification'
     new_params = Experiment_parameters(hidden=hidden,
                                        layers=num_layers,
                                        subtitle_type=subtitle_type,

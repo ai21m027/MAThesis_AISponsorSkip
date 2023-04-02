@@ -9,6 +9,7 @@ class Experiment(NamedTuple):
     hidden: int
     layers: int
     subtitle_type: str
+    type:str
     seed: int
     lr: float
     accuracy: float
@@ -34,6 +35,7 @@ def parse_log(path: str,dir:str) -> Experiment:
     epoch = int(re.search("'epochs': (\d+)",lines[0]).group(1))
     hidden = int(re.search("'hidden_size': (\d+)",lines[0]).group(1))
     num_layers = int(re.search("'num_layers': (\d+)",lines[0]).group(1))
+    type = re.search("'type': '(\w+)'", lines[0]).group(1) if re.search("'type': '(\w+)'",lines[0]) is not None else 'classification'
     for idx,line in enumerate(lines):
         if re.search(r'Validating Epoch', line):
             accuracy = float(re.search(r'accuracy: (\d+\.\d+),', line).group(1))
@@ -54,6 +56,7 @@ def parse_log(path: str,dir:str) -> Experiment:
                             hidden=hidden,
                             layers=num_layers,
                             subtitle_type = subtitle_type,
+                            type=type,
                             seed=seed,
                             lr=lr,
                             accuracy=accuracy,
@@ -78,7 +81,8 @@ if __name__ == '__main__':
             if file.endswith('train.log'):
                 #print(dir,file)
                 test = root
-                experiments.append(parse_log(f'{root}\\{file}',root.split('\\')[-1]))
+                if root.split('\\')[-1] != r'checkpoints':
+                    experiments.append(parse_log(f'{root}\\{file}',root.split('\\')[-1]))
 
     experiments_df = pd.DataFrame(experiments)
     #experiments_df.columns = ['epoch','hidden','layers','seed','Acc','Pk','Windiff','F1','Loss','TN','FN','FP','TP']
