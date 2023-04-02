@@ -70,7 +70,7 @@ def parse_log(path: str,dir:str) -> Experiment:
         return None
 
 if __name__ == '__main__':
-    experiment_base_dir = r'C:\temp'
+    experiment_base_dir = r'C:\temp\subtitle_type_10000'
     pd.set_option('display.max_columns',None)
     experiments = []
     for root, dirs, files in walk(experiment_base_dir):

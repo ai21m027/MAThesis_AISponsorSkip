@@ -162,7 +162,7 @@ def main(args: Namespace):
     utils.read_config_file(config_file)
     model_path = args.model
     with open(model_path, 'rb') as f:
-        model = torch.load(f)
+        model = torch.load(f, map_location=torch.device('cpu'))
     device = torch.device('cpu')
     model.to(device)
     word2vec = gensim.models.KeyedVectors.load_word2vec_format(utils.config['word2vecfile'], binary=True)
@@ -178,7 +178,7 @@ def main(args: Namespace):
         eval_dl = DataLoader(eval_ds, batch_size=1, collate_fn=collate_fn, shuffle=False,
                              num_workers=0)
 
-    output, targets = evaluate(model, eval_dl, args)
+    output, targets = evaluate(model, eval_dl)
     print(torch.argmax(output, dim=1))
 
     if args.in_db:
@@ -201,7 +201,6 @@ def main(args: Namespace):
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--cuda', help='Use cuda?', action='store_true')
     parser.add_argument('--in_db', help='Is video already in DB', action='store_true')
     parser.add_argument('--videoid', help='ID of input video', default='H6u0VBqNBQ8')
     parser.add_argument('--model', help='Path to the model')
