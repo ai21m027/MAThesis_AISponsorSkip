@@ -3,7 +3,7 @@ import os
 
 
 if __name__ =='__main__':
-    experiment_path = r'C:\temp\target_type_10000'
+    experiment_path = r'C:\temp\ModelSize_2nd_finished'
     dir_list =os.listdir(experiment_path)
     with open('test_only_batch.bat',mode='w') as f:
         for dir in dir_list:

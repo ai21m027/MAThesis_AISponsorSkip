@@ -88,6 +88,8 @@ def read_subtitle_entry(entry: list, index: int, word2vec, train: bool, return_w
                     video_targets.append(1)
                 else:
                     video_targets.append(0)
+        else:
+            raise ValueError(f'Unknown target type {target_type}')
 
     return new_text, video_targets, video_id
 
@@ -144,7 +146,7 @@ class SubtitlesDataset(Dataset):
 
     def __getitem__(self, index):
         entry = self.subtitles_list[index]
-        return read_subtitle_entry(entry, index, self.word2vec, self.train, self.target_type)
+        return read_subtitle_entry(entry, index, self.word2vec, self.train, target_type=self.target_type)
 
     def __len__(self):
         return len(self.subtitles_list)
