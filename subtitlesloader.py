@@ -132,7 +132,7 @@ class SubtitlesDataset(Dataset):
                     self.subtitles_list.append(subtitles)
                     self.videoidlist.append(videoid)
             else:
-                self.subtitles_list.append(my_db.get_subtitles_by_videoid(videoid))
+                self.subtitles_list.append(subtitles)
                 self.videoidlist.append(videoid)
 
         if subtitle_type == 'execute':
